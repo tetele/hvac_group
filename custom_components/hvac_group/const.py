@@ -1,9 +1,7 @@
-"""Constants for integration_blueprint."""
+"""Constants for hvac_group integration."""
 from logging import Logger, getLogger
 
+DOMAIN = "hvac_group"
 LOGGER: Logger = getLogger(__package__)
 
-NAME = "Integration blueprint"
-DOMAIN = "integration_blueprint"
 VERSION = "0.0.0"
-ATTRIBUTION = "Data provided by http://jsonplaceholder.typicode.com/"
