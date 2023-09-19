@@ -2,6 +2,8 @@
 
 import asyncio
 import math
+import re
+
 
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
@@ -27,6 +29,7 @@ from homeassistant.const import (
     PRECISION_TENTHS,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
+    UnitOfTemperature,
 )
 from homeassistant.core import CoreState, HomeAssistant, State, callback
 from homeassistant.helpers import entity_registry as er
@@ -36,6 +39,7 @@ from homeassistant.helpers.event import (
     async_track_state_change_event,
 )
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.temperature import display_temp
 from homeassistant.helpers.typing import EventType
 
 from .const import (
@@ -61,8 +65,8 @@ async def async_setup_entry(
     unique_id = config_entry.entry_id
 
     sensor_entity_id = config_entry.options.get(CONF_CURRENT_TEMPERATURE_ENTITY_ID)
-    min_temp = float(config_entry.options.get(CONF_MIN_TEMP))
-    max_temp = float(config_entry.options.get(CONF_MAX_TEMP))
+    min_temp = config_entry.options.get(CONF_MIN_TEMP)
+    max_temp = config_entry.options.get(CONF_MAX_TEMP)
 
     temperature_unit = hass.config.units.temperature_unit
 
@@ -91,12 +95,13 @@ async def async_setup_entry(
     async_add_entities(
         [
             HvacGroupClimateEntity(
+                hass,
                 unique_id,
                 name,
                 sensor_entity_id,
+                temperature_unit,
                 min_temp,
                 max_temp,
-                temperature_unit,
                 precision=precision,
                 target_temperature_step=target_temperature_step,
                 target_temp_high=max_temp,
@@ -116,12 +121,13 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
 
     def __init__(
         self,
+        hass: HomeAssistant,
         unique_id: str,
         name: str,
         temperature_sensor_entity_id: str,
-        min_temp: float,
-        max_temp: float,
         temperature_unit: str,
+        min_temp: str | None = None,
+        max_temp: str | None = None,
         precision: float | None = None,
         target_temp_high: float | None = None,
         target_temp_low: float | None = None,
@@ -131,6 +137,8 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
         toggle_heaters: bool = False,
     ) -> None:
         """Initialize HVAC Group Climate."""
+        self.hass = hass
+
         self._attr_name = name
         self._attr_unique_id = unique_id
 
@@ -138,7 +146,7 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
 
         self.temperature_sensor_entity_id = temperature_sensor_entity_id
         self._current_temperature: float = None  # TODO get sensor value
-        self._temp_precision = precision
+        self._temp_precision = precision or PRECISION_TENTHS
         self._temp_target_temperature_step = target_temperature_step
         self._attr_temperature_unit = temperature_unit
 
@@ -158,8 +166,19 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
         self._is_cooling_active = False
         self._is_heating_active = False
 
-        self._min_temp = min_temp
-        self._max_temp = max_temp
+        (temp, uom) = _get_temperature(
+            min_temp if min_temp is not None else super().min_temp
+        ) or (None, None)
+        self._min_temp = display_temp(
+            hass, temp, uom or hass.config.units.temperature_unit, self._temp_precision
+        )
+
+        (temp, uom) = _get_temperature(
+            max_temp if max_temp is not None else super().max_temp
+        ) or (None, None)
+        self._max_temp = display_temp(
+            hass, temp, uom or hass.config.units.temperature_unit, self._temp_precision
+        )
         self._target_temp_low = target_temp_low or min_temp
         self._target_temp_high = target_temp_high or max_temp
 
@@ -444,3 +463,20 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
     @callback
     def async_update_group_state(self) -> None:
         """Query all members and determine the climate group state."""
+
+
+def _get_temperature(temp_input: str | None) -> tuple[float, str | None] | None:
+    """Convert a temperature string into a tuple with value and unit of measurement."""
+    if temp_input is None:
+        return temp_input
+
+    unit_regex = "|".join(list(UnitOfTemperature))
+    matches = re.match(r"^\s*([\d.]+)\s*(" + unit_regex + r")?\s*$", temp_input)
+
+    if matches is None:
+        return matches
+
+    temperature = float(matches.group(1))
+    unit = matches.group(2)
+
+    return (temperature, unit)
