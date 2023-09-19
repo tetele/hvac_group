@@ -13,6 +13,8 @@ from homeassistant.components.climate import (
 )
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN
 from homeassistant.components.climate import (
+    DEFAULT_MAX_TEMP,
+    DEFAULT_MIN_TEMP,
     SERVICE_SET_HVAC_MODE,
     ClimateEntity,
     ClimateEntityFeature,
@@ -65,8 +67,8 @@ async def async_setup_entry(
     unique_id = config_entry.entry_id
 
     sensor_entity_id = config_entry.options.get(CONF_CURRENT_TEMPERATURE_ENTITY_ID)
-    min_temp = config_entry.options.get(CONF_MIN_TEMP)
-    max_temp = config_entry.options.get(CONF_MAX_TEMP)
+    min_temp = config_entry.options.get(CONF_MIN_TEMP, str(DEFAULT_MIN_TEMP))
+    max_temp = config_entry.options.get(CONF_MAX_TEMP, str(DEFAULT_MAX_TEMP))
 
     temperature_unit = hass.config.units.temperature_unit
 
