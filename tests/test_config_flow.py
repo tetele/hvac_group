@@ -15,40 +15,11 @@ from custom_components.hvac_group import DOMAIN
 
 
 @pytest.mark.asyncio
-async def test_1(climate_entities, hass: HomeAssistant):
-    """Test test."""
-
-    await hass.async_block_till_done()
-    assert hass.states.get("climate.heater_single_target")
-    assert hass.states.get("climate.cooler_single_target")
-
-
-@pytest.mark.asyncio
-async def test_2(
-    heater_single_target,
-    heater_ranged_target,
-    cooler_single_target,
-    hass: HomeAssistant,
-):
-    """Test test 2."""
-
-    await hass.async_block_till_done()
-    assert hass.states.get("climate.heater_single_target")
-    assert hass.states.get("climate.cooler_single_target")
-
-
-@pytest.mark.asyncio
 async def test_config_flow(
-    heater_single_target,
-    heater_ranged_target,
-    cooler_single_target,
-    # climate_entities,
+    climate_entities,
     hass: HomeAssistant,
 ):
     """Test HVAC Group config flow."""
-    await hass.async_start()
-    await hass.async_block_till_done()
-
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
@@ -81,5 +52,5 @@ async def test_config_flow(
     assert HVACMode.HEAT_COOL in hvac_group.attributes.get("hvac_modes")
     assert hvac_group.state == HVACMode.OFF
     assert hvac_group.attributes.get("hvac_action") == HVACAction.OFF
-    assert hvac_group.attributes.get("min_temp") == 15
-    assert hvac_group.attributes.get("max_temp") == 32
+    assert hvac_group.attributes.get("min_temp") == 20
+    assert hvac_group.attributes.get("max_temp") == 30
