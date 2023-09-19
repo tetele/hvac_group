@@ -1,44 +1,65 @@
-"""Adds config flow for Blueprint."""
+"""Add config flow for Blueprint."""
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any, cast
 import voluptuous as vol
-from homeassistant import config_entries
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+
+from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN, HVACMode
+from homeassistant.const import CONF_NAME
+from homeassistant.core import callback
 from homeassistant.helpers import selector
-from homeassistant.helpers.aiohttp_client import async_create_clientsession
+from homeassistant.helpers.schema_config_entry_flow import (
+    SchemaConfigFlowHandler,
+    SchemaFlowFormStep,
+    SchemaFlowMenuStep,
+)
 
-from .const import DOMAIN, LOGGER
+from .const import (
+    CONF_CURRENT_TEMPERATURE_ENTITY_ID,
+    CONF_TOGGLE_COOLERS,
+    CONF_TOGGLE_HEATERS,
+    DOMAIN,
+)
+
+OPTIONS_SCHEMA = {
+    vol.Optional(str(HVACMode.HEAT)): selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=CLIMATE_DOMAIN, multiple=True),
+    ),
+    vol.Optional(CONF_TOGGLE_HEATERS): selector.BooleanSelector(),
+    vol.Optional(str(HVACMode.COOL)): selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=CLIMATE_DOMAIN, multiple=True),
+    ),
+    vol.Optional(CONF_TOGGLE_COOLERS): selector.BooleanSelector(),
+    vol.Required(CONF_CURRENT_TEMPERATURE_ENTITY_ID): selector.EntitySelector(
+        selector.EntityFilterSelectorConfig(domain=CLIMATE_DOMAIN)
+    ),
+}
+
+CONFIG_SCHEMA = {
+    vol.Required(CONF_NAME): selector.TextSelector(),
+}
+
+OPTIONS_FLOW: dict[str, SchemaFlowFormStep | SchemaFlowMenuStep] = {
+    "init": SchemaFlowFormStep(vol.Schema(OPTIONS_SCHEMA))
+}
+
+CONFIG_FLOW: dict[str, SchemaFlowFormStep | SchemaFlowMenuStep] = {
+    "user": SchemaFlowFormStep(vol.Schema(CONFIG_SCHEMA).extend(OPTIONS_SCHEMA)),
+}
 
 
-class BlueprintFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
-    """Config flow for Blueprint."""
+class ClimateGroupConfigFlowHandler(SchemaConfigFlowHandler, domain=DOMAIN):
+    """Handle a config or options flow for HVAC Group."""
 
-    VERSION = 1
+    config_flow = CONFIG_FLOW
+    options_flow = OPTIONS_FLOW
 
-    async def async_step_user(
-        self,
-        user_input: dict | None = None,
-    ) -> config_entries.FlowResult:
-        """Handle a flow initialized by the user."""
-        _errors = {}
-        return self.async_show_form(
-            step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_USERNAME,
-                        default=(user_input or {}).get(CONF_USERNAME),
-                    ): selector.TextSelector(
-                        selector.TextSelectorConfig(
-                            type=selector.TextSelectorType.TEXT
-                        ),
-                    ),
-                    vol.Required(CONF_PASSWORD): selector.TextSelector(
-                        selector.TextSelectorConfig(
-                            type=selector.TextSelectorType.PASSWORD
-                        ),
-                    ),
-                }
-            ),
-            errors=_errors,
-        )
+    @callback
+    def async_config_entry_title(self, options: Mapping[str, Any]) -> str:
+        """Return config entry title.
+
+        The options parameter contains config entry options, which is the union of user
+        input from the config flow steps.
+        """
+        return cast(str, options["name"]) if "name" in options else "HVAC Group"
