@@ -8,6 +8,8 @@ import re
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
     ATTR_HVAC_MODE,
+    ATTR_MIN_TEMP,
+    ATTR_MAX_TEMP,
     ATTR_TARGET_TEMP_HIGH,
     ATTR_TARGET_TEMP_LOW,
 )
@@ -85,16 +87,32 @@ async def async_setup_entry(
     hvac_modes_entity_ids: dict[str, list[str]] = {}
     registry = er.async_get(hass)
 
-    for hvac_mode in [CONF_HEATERS, CONF_COOLERS]:
+    for hvac_actuator_type in [CONF_HEATERS, CONF_COOLERS]:
         target_entities = []
         if (
-            hvac_mode in config_entry.options
-            and len(config_entry.options[hvac_mode]) > 0
+            hvac_actuator_type in config_entry.options
+            and len(config_entry.options[hvac_actuator_type]) > 0
         ):
-            for entity_id in config_entry.options[hvac_mode]:
-                target_entities.append(er.async_validate_entity_id(registry, entity_id))
+            for entity_id in config_entry.options[hvac_actuator_type]:
+                validated_entity_id = er.async_validate_entity_id(registry, entity_id)
+                target_entities.append(validated_entity_id)
+                state = hass.states.get(validated_entity_id)
+                min_temp = min(
+                    state.attributes.get(ATTR_MAX_TEMP, min_temp),
+                    max(
+                        min_temp,
+                        state.attributes.get(ATTR_MIN_TEMP, min_temp),
+                    ),
+                )
+                max_temp = max(
+                    state.attributes.get(ATTR_MIN_TEMP, max_temp),
+                    min(
+                        max_temp,
+                        state.attributes.get(ATTR_MAX_TEMP, max_temp),
+                    ),
+                )
         if len(target_entities) > 0:
-            hvac_modes_entity_ids.update({hvac_mode: target_entities})
+            hvac_modes_entity_ids.update({hvac_actuator_type: target_entities})
 
     async_add_entities(
         [
