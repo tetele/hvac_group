@@ -2,7 +2,7 @@
   "name": "tetele/hvac_group",
   "image": "mcr.microsoft.com/vscode/devcontainers/python:0-3.11-bullseye",
   "postCreateCommand": "scripts/setup",
-  "forwardPorts": [8123],
+  "forwardPorts": ["8123:8123"],
   "portsAttributes": {
     "8123": {
       "label": "Home Assistant",
@@ -24,9 +24,11 @@
         "editor.tabSize": 4,
         "python.pythonPath": "/usr/bin/python3",
         "python.analysis.autoSearchPaths": false,
+        "python.testing.pytestArgs": ["tests", "--asyncio-mode=auto"],
         "editor.formatOnPaste": false,
         "editor.formatOnSave": true,
         "editor.formatOnType": true,
+        "editor.codeActionsOnSave": ["source.organizeImports"],
         "files.trimTrailingWhitespace": true
       }
     }
