@@ -67,8 +67,8 @@ async def async_setup_entry(
     unique_id = config_entry.entry_id
 
     sensor_entity_id = config_entry.options.get(CONF_CURRENT_TEMPERATURE_ENTITY_ID)
-    min_temp = config_entry.options.get(CONF_MIN_TEMP, str(DEFAULT_MIN_TEMP))
-    max_temp = config_entry.options.get(CONF_MAX_TEMP, str(DEFAULT_MAX_TEMP))
+    min_temp = config_entry.options.get(CONF_MIN_TEMP, DEFAULT_MIN_TEMP)
+    max_temp = config_entry.options.get(CONF_MAX_TEMP, DEFAULT_MAX_TEMP)
 
     temperature_unit = hass.config.units.temperature_unit
 
@@ -128,8 +128,8 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
         name: str,
         temperature_sensor_entity_id: str,
         temperature_unit: str,
-        min_temp: str | None = None,
-        max_temp: str | None = None,
+        min_temp: float,
+        max_temp: float,
         precision: float | None = None,
         target_temp_high: float | None = None,
         target_temp_low: float | None = None,
@@ -168,18 +168,17 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
         self._is_cooling_active = False
         self._is_heating_active = False
 
-        (temp, uom) = _get_temperature(
-            min_temp if min_temp is not None else super().min_temp
-        ) or (None, None)
         self._min_temp = display_temp(
-            hass, temp, uom or hass.config.units.temperature_unit, self._temp_precision
+            hass,
+            min_temp if min_temp is not None else super().min_temp,
+            self._attr_temperature_unit or hass.config.units.temperature_unit,
+            self._temp_precision,
         )
-
-        (temp, uom) = _get_temperature(
-            max_temp if max_temp is not None else super().max_temp
-        ) or (None, None)
         self._max_temp = display_temp(
-            hass, temp, uom or hass.config.units.temperature_unit, self._temp_precision
+            hass,
+            max_temp if max_temp is not None else super().max_temp,
+            self._attr_temperature_unit or hass.config.units.temperature_unit,
+            self._temp_precision,
         )
         self._target_temp_low = target_temp_low or min_temp
         self._target_temp_high = target_temp_high or max_temp

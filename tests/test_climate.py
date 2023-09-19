@@ -31,8 +31,8 @@ async def test_setup_entry(hass: HomeAssistant) -> None:
     """Test component creation."""
     config = {
         "temperature_entity_id": "sensor.bedroom_temperature",
-        "min_temp": "15",
-        "max_temp": "303.1K",  # 30 C
+        "min_temp": 15,
+        "max_temp": 30,
         "hvac_modes_entity_ids": {
             "heat": ["climate.heater", "climate.hvac1"],
             "cool": ["climate.cooler", "climate.hvac"],
