@@ -2,7 +2,11 @@
 import pytest
 
 from homeassistant import config_entries
-from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN
+from homeassistant.components.climate import (
+    DOMAIN as CLIMATE_DOMAIN,
+    HVACAction,
+    HVACMode,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -11,7 +15,10 @@ from custom_components.hvac_group import DOMAIN
 
 
 @pytest.mark.asyncio
-async def test_config_flow(enable_custom_integrations, hass: HomeAssistant):
+async def test_config_flow(
+    climate_entities,
+    hass: HomeAssistant,
+):
     """Test HVAC Group config flow."""
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -21,7 +28,15 @@ async def test_config_flow(enable_custom_integrations, hass: HomeAssistant):
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {"name": "test hvac", "temperature_entity_id": "climate.bedroom_ac"},
+        {
+            "name": "test hvac",
+            "temperature_entity_id": "climate.cooler_single_target",
+            "coolers": ["climate.cooler_single_target"],
+            "heaters": [
+                "climate.heater_single_target",
+                "climate.heater_ranged_target",
+            ],
+        },
     )
 
     await hass.async_block_till_done()
@@ -30,4 +45,12 @@ async def test_config_flow(enable_custom_integrations, hass: HomeAssistant):
     config_entry: ConfigEntry = result["result"]
     assert config_entry.state == ConfigEntryState.LOADED
 
-    assert hass.states.get(f"{CLIMATE_DOMAIN}.test_hvac")
+    hvac_group = hass.states.get(f"{CLIMATE_DOMAIN}.test_hvac")
+    assert hvac_group
+
+    # Test available HVAC modes
+    assert HVACMode.HEAT_COOL in hvac_group.attributes.get("hvac_modes")
+    assert hvac_group.state == HVACMode.OFF
+    assert hvac_group.attributes.get("hvac_action") == HVACAction.OFF
+    assert hvac_group.attributes.get("min_temp") == 20
+    assert hvac_group.attributes.get("max_temp") == 30
