@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import Any, cast
 import voluptuous as vol
 
-from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN, HVACMode
+from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN
 from homeassistant.const import CONF_NAME
 from homeassistant.core import callback
 from homeassistant.helpers import selector
@@ -17,17 +17,19 @@ from homeassistant.helpers.schema_config_entry_flow import (
 
 from .const import (
     CONF_CURRENT_TEMPERATURE_ENTITY_ID,
+    CONF_COOLERS,
+    CONF_HEATERS,
     CONF_TOGGLE_COOLERS,
     CONF_TOGGLE_HEATERS,
     DOMAIN,
 )
 
 OPTIONS_SCHEMA = {
-    vol.Optional(str(HVACMode.HEAT)): selector.EntitySelector(
+    vol.Optional(CONF_HEATERS): selector.EntitySelector(
         selector.EntitySelectorConfig(domain=CLIMATE_DOMAIN, multiple=True),
     ),
     vol.Optional(CONF_TOGGLE_HEATERS): selector.BooleanSelector(),
-    vol.Optional(str(HVACMode.COOL)): selector.EntitySelector(
+    vol.Optional(CONF_COOLERS): selector.EntitySelector(
         selector.EntitySelectorConfig(domain=CLIMATE_DOMAIN, multiple=True),
     ),
     vol.Optional(CONF_TOGGLE_COOLERS): selector.BooleanSelector(),

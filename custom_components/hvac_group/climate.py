@@ -46,6 +46,8 @@ from homeassistant.helpers.typing import EventType
 
 from .const import (
     CONF_CURRENT_TEMPERATURE_ENTITY_ID,
+    CONF_COOLERS,
+    CONF_HEATERS,
     CONF_MAX_TEMP,
     CONF_MIN_TEMP,
     CONF_PRECISION,
@@ -83,7 +85,7 @@ async def async_setup_entry(
     hvac_modes_entity_ids: dict[str, list[str]] = {}
     registry = er.async_get(hass)
 
-    for hvac_mode in [HVACMode.HEAT, HVACMode.COOL]:
+    for hvac_mode in [CONF_HEATERS, CONF_COOLERS]:
         target_entities = []
         if (
             hvac_mode in config_entry.options
@@ -157,8 +159,8 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
         self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
 
         if (
-            HVACMode.HEAT in hvac_modes_entity_ids
-            or HVACMode.COOL in hvac_modes_entity_ids
+            CONF_HEATERS in hvac_modes_entity_ids
+            or CONF_COOLERS in hvac_modes_entity_ids
         ):
             self._attr_hvac_modes.append(HVACMode.HEAT_COOL)
             self._attr_supported_features = (
