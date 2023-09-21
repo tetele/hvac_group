@@ -2,7 +2,6 @@
 
 import asyncio
 import math
-import re
 
 
 from homeassistant.components.climate import (
@@ -33,7 +32,6 @@ from homeassistant.const import (
     PRECISION_TENTHS,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
-    UnitOfTemperature,
 )
 from homeassistant.core import CoreState, HomeAssistant, State, callback
 from homeassistant.helpers import entity_registry as er
@@ -43,7 +41,6 @@ from homeassistant.helpers.event import (
     async_track_state_change_event,
 )
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.temperature import display_temp
 from homeassistant.helpers.typing import EventType
 
 from .const import (
@@ -84,33 +81,18 @@ async def async_setup_entry(
     toggle_coolers = config_entry.options.get(CONF_TOGGLE_COOLERS, False)
     toggle_heaters = config_entry.options.get(CONF_TOGGLE_HEATERS, False)
 
-    hvac_modes_entity_ids: dict[str, list[str]] = {}
+    hvac_modes_entity_ids: dict[str, set[str]] = {}
     registry = er.async_get(hass)
 
     for hvac_actuator_type in [CONF_HEATERS, CONF_COOLERS]:
-        target_entities = []
+        target_entities = set()
         if (
             hvac_actuator_type in config_entry.options
             and len(config_entry.options[hvac_actuator_type]) > 0
         ):
             for entity_id in config_entry.options[hvac_actuator_type]:
                 validated_entity_id = er.async_validate_entity_id(registry, entity_id)
-                target_entities.append(validated_entity_id)
-                state = hass.states.get(validated_entity_id)
-                min_temp = min(
-                    state.attributes.get(ATTR_MAX_TEMP, min_temp),
-                    max(
-                        min_temp,
-                        state.attributes.get(ATTR_MIN_TEMP, min_temp),
-                    ),
-                )
-                max_temp = max(
-                    state.attributes.get(ATTR_MIN_TEMP, max_temp),
-                    min(
-                        max_temp,
-                        state.attributes.get(ATTR_MAX_TEMP, max_temp),
-                    ),
-                )
+                target_entities.add(validated_entity_id)
         if len(target_entities) > 0:
             hvac_modes_entity_ids.update({hvac_actuator_type: target_entities})
 
@@ -147,14 +129,14 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
         unique_id: str,
         name: str,
         temperature_sensor_entity_id: str,
-        temperature_unit: str,
-        min_temp: float,
-        max_temp: float,
+        temperature_unit: str | None = None,
+        min_temp: float | None = None,
+        max_temp: float | None = None,
         precision: float | None = None,
         target_temp_high: float | None = None,
         target_temp_low: float | None = None,
         target_temperature_step: float | None = None,
-        hvac_modes_entity_ids: dict[str, list[str]] = {},
+        hvac_modes_entity_ids: dict[str, set[str]] = {},
         toggle_coolers: bool = False,
         toggle_heaters: bool = False,
     ) -> None:
@@ -167,7 +149,6 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
         self._entity_ids: list[str] = []  # GroupEntity
 
         self.temperature_sensor_entity_id = temperature_sensor_entity_id
-        self._current_temperature: float = None  # TODO get sensor value
         self._temp_precision = precision or PRECISION_TENTHS
         self._temp_target_temperature_step = target_temperature_step
         self._attr_temperature_unit = temperature_unit
@@ -184,22 +165,14 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
             self._attr_supported_features = (
                 ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
             )
+        self._hvac_modes_entity_ids = hvac_modes_entity_ids
 
         self._is_cooling_active = False
         self._is_heating_active = False
 
-        self._min_temp = display_temp(
-            hass,
-            min_temp if min_temp is not None else super().min_temp,
-            self._attr_temperature_unit or hass.config.units.temperature_unit,
-            self._temp_precision,
-        )
-        self._max_temp = display_temp(
-            hass,
-            max_temp if max_temp is not None else super().max_temp,
-            self._attr_temperature_unit or hass.config.units.temperature_unit,
-            self._temp_precision,
-        )
+        self._current_temperature = None
+        self._min_temp = min_temp
+        self._max_temp = max_temp
         self._target_temp_low = target_temp_low or min_temp
         self._target_temp_high = target_temp_high or max_temp
 
@@ -290,17 +263,33 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
                 self._async_sensor_changed,
             )
         )
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass,
+                self._hvac_modes_entity_ids[CONF_HEATERS].union(
+                    self._hvac_modes_entity_ids[CONF_COOLERS]
+                ),
+                self._async_member_changed,
+            )
+        )
 
         @callback
         def _async_startup(*_):
             """Init on startup."""
             sensor_state = self.hass.states.get(self.temperature_sensor_entity_id)
-            if sensor_state and sensor_state.state not in (
-                STATE_UNAVAILABLE,
-                STATE_UNKNOWN,
+            if (
+                sensor_state
+                and sensor_state.state
+                not in (
+                    STATE_UNAVAILABLE,
+                    STATE_UNKNOWN,
+                )
+                and sensor_state.attributes[ATTR_CURRENT_TEMPERATURE]
             ):
                 self._async_update_temp(sensor_state)
                 self.async_write_ha_state()
+
+            self._async_compute_min_max_temps()
 
         if self.hass.state == CoreState.running:
             _async_startup()
@@ -366,6 +355,37 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
         await self._async_control_hvac()
         self.async_write_ha_state()
 
+    async def _async_member_changed(
+        self, event: EventType[EventStateChangedData]
+    ) -> None:
+        """Handle climate object changes."""
+        new_state = event.data["new_state"]
+        if (
+            new_state is None
+            or new_state.attributes[ATTR_MIN_TEMP]
+            in (
+                STATE_UNAVAILABLE,
+                STATE_UNKNOWN,
+            )
+            or new_state.attributes[ATTR_MAX_TEMP]
+            in (
+                STATE_UNAVAILABLE,
+                STATE_UNKNOWN,
+            )
+        ):
+            return
+
+        old_state = event.data["old_state"]
+        if (
+            new_state.attributes[ATTR_MIN_TEMP] == old_state.attributes[ATTR_MIN_TEMP]
+        ) and (
+            new_state.attributes[ATTR_MAX_TEMP] == old_state.attributes[ATTR_MAX_TEMP]
+        ):
+            return
+
+        self._async_compute_min_max_temps()
+        self.async_write_ha_state()
+
     @callback
     def _async_update_temp(self, state: State) -> None:
         """Update thermostat with latest state from sensor."""
@@ -378,6 +398,32 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
             self._current_temperature = cur_temp
         except ValueError as ex:
             LOGGER.error("Unable to update from sensor: %s", ex)
+
+    def _async_compute_min_max_temps(self) -> None:
+        """Update the min_temp and max_temp based on members' min/max temps."""
+
+        self._min_temp = 0
+        self._max_temp = 100
+        for _hvac_actuator_type, actuators in self._hvac_modes_entity_ids.items():
+            for entity_id in actuators:
+                state = self.hass.states.get(entity_id)
+                if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                    continue
+
+                self._min_temp = min(
+                    state.attributes.get(ATTR_MAX_TEMP, self._min_temp),
+                    max(
+                        self._min_temp,
+                        state.attributes.get(ATTR_MIN_TEMP, self._min_temp),
+                    ),
+                )
+                self._max_temp = max(
+                    state.attributes.get(ATTR_MIN_TEMP, self._max_temp),
+                    min(
+                        self._max_temp,
+                        state.attributes.get(ATTR_MAX_TEMP, self._max_temp),
+                    ),
+                )
 
     async def _async_control_hvac(self, force=False):
         """Check if we need to forward HVAC commands."""
@@ -484,20 +530,3 @@ class HvacGroupClimateEntity(GroupEntity, ClimateEntity, RestoreEntity):
     @callback
     def async_update_group_state(self) -> None:
         """Query all members and determine the climate group state."""
-
-
-def _get_temperature(temp_input: str | None) -> tuple[float, str | None] | None:
-    """Convert a temperature string into a tuple with value and unit of measurement."""
-    if temp_input is None:
-        return temp_input
-
-    unit_regex = "|".join(list(UnitOfTemperature))
-    matches = re.match(r"^\s*([\d.]+)\s*(" + unit_regex + r")?\s*$", temp_input)
-
-    if matches is None:
-        return matches
-
-    temperature = float(matches.group(1))
-    unit = matches.group(2)
-
-    return (temperature, unit)
