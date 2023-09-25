@@ -1,4 +1,4 @@
 pytest==7.4.2
 pytest-asyncio==0.21.1
-pytest-homeassistant-custom-component==0.13.56
+pytest-homeassistant-custom-component==0.13.57
 pre-commit
