@@ -144,7 +144,7 @@ async def hvac_group(hass: HomeAssistant) -> HvacGroupClimateEntity:
 async def test_entry(hvac_group: HvacGroupClimateEntity, hass: HomeAssistant) -> None:
     """Test component creation."""
 
-    assert hvac_group.temperature_sensor_entity_id == "climate.heater"
+    assert hvac_group._temperature_sensor_entity_id == "climate.heater"
 
     assert hvac_group.precision == PRECISION_TENTHS
     assert hvac_group.target_temperature_step == PRECISION_HALVES
@@ -166,10 +166,13 @@ async def test_sensor_changes(
 
     with patch("homeassistant.core.ServiceRegistry.async_call") as hass_service_call:
         try:
-            await hvac_group._async_sensor_changed(
-                _generate_event(
-                    hass, "climate.heater", attributes={"current_temperature": 21.3}
-                )
+            event = _generate_event(
+                hass, "climate.heater", attributes={"current_temperature": 21.3}
+            )
+            await hvac_group.async_update_temperature_sensor(
+                event.data["entity_id"],
+                event.data["new_state"],
+                event.data["old_state"],
             )
         except NoEntitySpecifiedError:
             assert hvac_group.current_temperature == 21.3
@@ -185,10 +188,13 @@ async def test_member_changes(
     """Test behavior after member min/max temperatures change."""
 
     try:
-        await hvac_group._async_member_changed(
-            _generate_event(
-                hass, "climate.hvac", attributes={"min_temp": 15, "max_temp": 32}
-            )
+        event = _generate_event(
+            hass, "climate.hvac", attributes={"min_temp": 15, "max_temp": 32}
+        )
+        await hvac_group.async_update_supported_features(
+            event.data["entity_id"],
+            event.data["new_state"],
+            event.data["old_state"],
         )
     except NoEntitySpecifiedError:
         assert hvac_group.min_temp == 16
@@ -205,7 +211,7 @@ async def test_control_hvac(
 
     with patch.object(hvac_group, "_async_turn_device") as hvac_turn_device:
         try:
-            await hvac_group._async_control_hvac()
+            await hvac_group.async_run_hvac()
         except NoEntitySpecifiedError:
             assert not hvac_turn_device.called
         else:

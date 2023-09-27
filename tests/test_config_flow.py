@@ -155,8 +155,6 @@ async def test_toggle_actuators(
     )
     await hass.async_block_till_done()
 
-    # hass.states.get(f"{CLIMATE_DOMAIN}.test_hvac")
-
     for heater in config_entry.options["heaters"]:
         heater_state = hass.states.get(heater)
         assert heater_state
