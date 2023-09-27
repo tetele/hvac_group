@@ -9,15 +9,16 @@
 [![BuyMeCoffee][buymecoffeebadge]][buymecoffee]
 
 <!-- [![Discord][discord-shield]][discord] -->
+
 [![Community Forum][forum-shield]][forum]
 
 _Create a custom thermostat to control multiple other climate components._
 
 **This integration will set up the following platforms.**
 
-Platform | Description
--- | --
-`climate` | The replacement thermostat which can control other nested thermostats.
+| Platform  | Description                                                            |
+| --------- | ---------------------------------------------------------------------- |
+| `climate` | The replacement thermostat which can control other nested thermostats. |
 
 ## Installation
 
@@ -31,13 +32,20 @@ Platform | Description
 
 ## Configuration is done in the UI
 
-<!---->
+1. Go to "Settings" -> "Devices & services" -> "Helpers" click "+ Create helper" and search for "HVAC group"
+1. Name your new HVAC group. Something like `Bedroom climate`
+1. Select one or more heating entities (e.g. the radiators and the electric heater in the bedroom)
+1. Select one or more cooling entities (e.g. the air conditioning in the bedroom)
+1. For both heaters and coolers, if you check `Toggle heaters/coolers on or off [...]`, they will physically be turned off if the desired temperature is reached
+1. Select a climate entity which holds the current temperature (`Temperature sensor`)
+1. If you check `Hide members`, creating the group will mark heater and cooler entities as hidden
+1. Click `Submit`
 
 ## Contributions are welcome!
 
 If you want to contribute to this please read the [Contribution guidelines](CONTRIBUTING.md)
 
-***
+---
 
 [hvac_group]: https://github.com/tetele/hvac_group
 [buymecoffee]: https://www.buymeacoffee.com/t3t3l3
@@ -46,9 +54,11 @@ If you want to contribute to this please read the [Contribution guidelines](CONT
 [commits]: https://github.com/tetele/hvac_group/commits/main
 [hacs]: https://github.com/hacs/integration
 [hacsbadge]: https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge
+
 <!-- [discord]: https://discord.gg/Qa5fW2R -->
 <!-- [discord-shield]: https://img.shields.io/discord/330944238910963714.svg?style=for-the-badge -->
 <!-- [exampleimg]: example.png -->
+
 [forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg?style=for-the-badge
 [forum]: https://community.home-assistant.io/
 [license-shield]: https://img.shields.io/github/license/tetele/hvac_group.svg?style=for-the-badge
