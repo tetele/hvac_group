@@ -1,18 +1,21 @@
 {
-    "config": {
-        "step": {
-            "user": {
-                "description": "If you need help with the configuration have a look here: https://github.com/ludeeus/integration_blueprint",
-                "data": {
-                    "username": "Username",
-                    "password": "Password"
-                }
-            }
-        },
-        "error": {
-            "auth": "Username/Password is wrong.",
-            "connection": "Unable to connect to the server.",
-            "unknown": "Unknown error occurred."
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add HVAC group",
+        "description": "HVAC Groups allow you to create a new thermostat that controls other thermostats with a single interface.",
+        "data": {
+          "name": "Name",
+          "heaters": "Heating thermostats",
+          "toggle_heaters": "Toggle heaters on or off depending on ambiental temperature",
+          "coolers": "Cooling thermostats",
+          "toggle_coolers": "Toggle coolers on or off depending on ambiental temperature",
+          "dry": "Drying thermostats",
+          "fan_only": "Fan thermostats or fans",
+          "hide_members": "Hide members",
+          "temperature_entity_id": "Temperature sensor"
         }
+      }
     }
+  }
 }
