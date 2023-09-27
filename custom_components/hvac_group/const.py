@@ -16,5 +16,6 @@ CONF_TARGET_TEMP_LOW = "target_temp_low"
 CONF_TARGET_TEMP_STEP = "target_temperature_step"
 CONF_TOGGLE_COOLERS = "toggle_coolers"
 CONF_TOGGLE_HEATERS = "toggle_heaters"
+CONF_HIDE_MEMBERS = "hide_members"
 
 VERSION = "0.0.0"

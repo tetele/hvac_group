@@ -10,8 +10,21 @@
           "toggle_heaters": "Toggle heaters on or off depending on ambiental temperature",
           "coolers": "Cooling thermostats",
           "toggle_coolers": "Toggle coolers on or off depending on ambiental temperature",
-          "dry": "Drying thermostats",
-          "fan_only": "Fan thermostats or fans",
+          "hide_members": "Hide members",
+          "temperature_entity_id": "Temperature sensor"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit HVAC group",
+        "data": {
+          "heaters": "Heating thermostats",
+          "toggle_heaters": "Toggle heaters on or off depending on ambiental temperature",
+          "coolers": "Cooling thermostats",
+          "toggle_coolers": "Toggle coolers on or off depending on ambiental temperature",
           "hide_members": "Hide members",
           "temperature_entity_id": "Temperature sensor"
         }
