@@ -429,7 +429,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         )
 
         async def _update_at_start(_: HomeAssistant) -> None:
-            await self.async_run_hvac()
+            await self.async_run_hvac(force=True)
             self.async_write_ha_state()
 
         self.async_on_remove(start.async_at_start(self.hass, _update_at_start))
