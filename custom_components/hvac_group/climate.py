@@ -106,8 +106,6 @@ async def async_setup_entry(
                 max_temp,
                 precision=precision,
                 target_temperature_step=target_temperature_step,
-                target_temp_high=max_temp,
-                target_temp_low=min_temp,
                 heaters=hvac_actuator_entity_ids[CONF_HEATERS],
                 coolers=hvac_actuator_entity_ids[CONF_COOLERS],
                 toggle_coolers=toggle_coolers,
@@ -281,7 +279,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self._temp_target_temperature_step = target_temperature_step
         self._attr_temperature_unit = temperature_unit
 
-        self._hvac_mode = hvac_mode or HVACMode.OFF
+        self._hvac_mode = hvac_mode
         self._attr_hvac_modes = [HVACMode.OFF]
 
         if heaters is None:
@@ -299,8 +297,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self._current_temperature = None
         self._min_temp = min_temp or DEFAULT_MIN_TEMP
         self._max_temp = max_temp or DEFAULT_MAX_TEMP
-        self._target_temp_low = target_temp_low or min_temp
-        self._target_temp_high = target_temp_high or max_temp
+        self._target_temp_low = target_temp_low
+        self._target_temp_high = target_temp_high
 
         self._toggle_heaters_on_threshold = toggle_heaters
         self._toggle_coolers_on_threshold = toggle_coolers
@@ -436,6 +434,36 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
         self.async_on_remove(start.async_at_start(self.hass, _update_at_start))
 
+        # Check If we have an old state
+        if (old_state := await self.async_get_last_state()) is not None:
+            # If we have no initial temperature, restore
+            if self._target_temp_low is None:
+                self._target_temp_low = old_state.attributes.get(
+                    ATTR_TARGET_TEMP_LOW, self.min_temp
+                )
+            if self._target_temp_high is None:
+                self._target_temp_high = old_state.attributes.get(
+                    ATTR_TARGET_TEMP_HIGH, self.max_temp
+                )
+            if not self._hvac_mode and old_state.state:
+                self._hvac_mode = old_state.state
+
+        else:
+            # No previous state, try and restore defaults
+            if self._target_temp_low is None:
+                self._target_temp_low = self.min_temp
+            if self._target_temp_high is None:
+                self._target_temp_high = self.max_temp
+            LOGGER.warning(
+                "No previously saved temperature, setting to %s, %s",
+                self._target_temp_low,
+                self._target_temp_high,
+            )
+
+        # Set default state to off
+        if not self._hvac_mode:
+            self._hvac_mode = HVACMode.OFF
+
     @callback
     async def async_defer_or_update_ha_state(self) -> None:
         """Only update once at start."""
@@ -477,8 +505,10 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                     new_state.attributes.get(ATTR_MAX_TEMP, self._max_temp),
                 ),
             )
-            self._target_temp_low = max(self._target_temp_low, self._min_temp)
-            self._target_temp_high = min(self._target_temp_high, self._max_temp)
+            if self._target_temp_low is not None:
+                self._target_temp_low = max(self._target_temp_low, self._min_temp)
+            if self._target_temp_high is not None:
+                self._target_temp_high = min(self._target_temp_high, self._max_temp)
 
     @callback
     async def async_update_temperature_sensor(
@@ -522,13 +552,6 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 )
 
             if not self._active:
-                return
-
-            if (
-                not self._toggle_coolers_on_threshold
-                and not self._toggle_heaters_on_threshold
-                and not force
-            ):
                 return
 
             assert self._target_temp_low
