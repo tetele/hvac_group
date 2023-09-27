@@ -319,7 +319,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             return HVACAction.OFF
         if self._is_heating_active:
             return HVACAction.HEATING
-        elif self._is_cooling_active:
+        if self._is_cooling_active:
             return HVACAction.COOLING
         return HVACAction.IDLE
 
@@ -560,44 +560,40 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             too_cold = self._target_temp_low >= self._current_temperature
             too_hot = self._current_temperature >= self._target_temp_high
             if too_hot:
-                if (
-                    not self._is_cooling_active and self._toggle_coolers_on_threshold
-                ) or force:
+                if not self._is_cooling_active or force:
                     LOGGER.info(
                         "Turning on cooling %s",
                         ",".join(self._coolers.keys()),
                     )
-                    await self._coolers.async_turn_on(self._context)
+                    if self._toggle_coolers_on_threshold or force:
+                        await self._coolers.async_turn_on(self._context)
                     self._is_cooling_active = True
-            elif (
-                self._is_cooling_active and self._toggle_coolers_on_threshold
-            ) or force:
+            elif self._is_cooling_active or force:
                 LOGGER.info(
                     "Turning off cooling %s",
                     ",".join(self._coolers.keys()),
                 )
                 self._is_cooling_active = False
-                await self._coolers.async_turn_off(self._context)
+                if self._toggle_coolers_on_threshold or force:
+                    await self._coolers.async_turn_off(self._context)
 
             if too_cold:
-                if (
-                    not self._is_heating_active and self._toggle_heaters_on_threshold
-                ) or force:
+                if not self._is_heating_active or force:
                     LOGGER.info(
                         "Turning on heating %s",
                         ",".join(self._heaters.keys()),
                     )
-                    await self._heaters.async_turn_on(self._context)
+                    if self._toggle_heaters_on_threshold or force:
+                        await self._heaters.async_turn_on(self._context)
                     self._is_heating_active = True
-            elif (
-                self._is_heating_active and self._toggle_heaters_on_threshold
-            ) or force:
+            elif self._is_heating_active or force:
                 LOGGER.info(
                     "Turning off heating %s",
                     ",".join(self._heaters.keys()),
                 )
                 self._is_heating_active = False
-                await self._heaters.async_turn_off(self._context)
+                if self._toggle_heaters_on_threshold or force:
+                    await self._heaters.async_turn_off(self._context)
 
     def _add_heater(self, heater_entity_id: str) -> None:
         """Add a heater actuator referenced by entity_id."""
