@@ -565,17 +565,13 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                         "Turning on cooling %s",
                         ",".join(self._coolers.keys()),
                     )
-                    if self._toggle_coolers_on_threshold or force:
-                        await self._coolers.async_turn_on(self._context)
-                    self._is_cooling_active = True
+                await self._async_turn_on_coolers(force=force)
             elif self._is_cooling_active or force:
                 LOGGER.info(
                     "Turning off cooling %s",
                     ",".join(self._coolers.keys()),
                 )
-                self._is_cooling_active = False
-                if self._toggle_coolers_on_threshold or force:
-                    await self._coolers.async_turn_off(self._context)
+                await self._async_turn_off_coolers(force=force)
 
             if too_cold:
                 if not self._is_heating_active or force:
@@ -583,17 +579,13 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                         "Turning on heating %s",
                         ",".join(self._heaters.keys()),
                     )
-                    if self._toggle_heaters_on_threshold or force:
-                        await self._heaters.async_turn_on(self._context)
-                    self._is_heating_active = True
+                await self._async_turn_on_heaters(force=force)
             elif self._is_heating_active or force:
                 LOGGER.info(
                     "Turning off heating %s",
                     ",".join(self._heaters.keys()),
                 )
-                self._is_heating_active = False
-                if self._toggle_heaters_on_threshold or force:
-                    await self._heaters.async_turn_off(self._context)
+                await self._async_turn_off_heaters(force=force)
 
     def _add_heater(self, heater_entity_id: str) -> None:
         """Add a heater actuator referenced by entity_id."""
@@ -646,20 +638,14 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             match hvac_mode:
                 case HVACMode.HEAT:
                     # Firstly turn off coolers so that if a device is both a cooler and a heater to make sure to start it in the proper mode
-                    await self._coolers.async_turn_off(self._context)
-                    await self._heaters.async_turn_on(self._context)
-                    self._is_cooling_active = False
-                    self._is_heating_active = True
+                    await self._async_turn_off_coolers()
+                    await self._async_turn_on_heaters()
                 case HVACMode.COOL:
-                    await self._heaters.async_turn_off(self._context)
-                    await self._coolers.async_turn_on(self._context)
-                    self._is_cooling_active = True
-                    self._is_heating_active = False
+                    await self._async_turn_off_heaters()
+                    await self._async_turn_on_coolers()
                 case HVACMode.HEAT_COOL:
-                    await self._coolers.async_turn_on(self._context)
-                    await self._heaters.async_turn_on(self._context)
-                    self._is_cooling_active = True
-                    self._is_heating_active = True
+                    await self._async_turn_on_heaters()
+                    await self._async_turn_on_coolers()
             await self.async_run_hvac()
         elif hvac_mode == HVACMode.OFF:
             self._hvac_mode = HVACMode.OFF
@@ -712,3 +698,27 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 target_temp_high=self._target_temp_high,
                 context=self._context,
             )
+
+    async def _async_turn_on_coolers(self, force: bool = False) -> None:
+        """Turn on coolers if they don't toggle automatically."""
+        self._is_cooling_active = True
+        if self._toggle_coolers_on_threshold or force:
+            await self._coolers.async_turn_on(self._context)
+
+    async def _async_turn_off_coolers(self, force: bool = False) -> None:
+        """Turn off coolers if they don't toggle automatically."""
+        self._is_cooling_active = False
+        if self._toggle_coolers_on_threshold or force:
+            await self._coolers.async_turn_off(self._context)
+
+    async def _async_turn_on_heaters(self, force: bool = False) -> None:
+        """Turn on heaters if they don't toggle automatically."""
+        self._is_cooling_active = True
+        if self._toggle_heaters_on_threshold or force:
+            await self._heaters.async_turn_on(self._context)
+
+    async def _async_turn_off_heaters(self, force: bool = False) -> None:
+        """Turn off heaters if they don't toggle automatically."""
+        self._is_cooling_active = False
+        if self._toggle_heaters_on_threshold or force:
+            await self._heaters.async_turn_off(self._context)
