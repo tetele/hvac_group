@@ -101,8 +101,8 @@ async def test_config_flow(
 
     assert (
         hass.states.get("climate.cooler_single_target").attributes.get("temperature")
-        == 32
-    )  # because the cooler wasn't needed, so the temperature is the default
+        == 25
+    )
     assert (
         hass.states.get("climate.heater_single_target").attributes.get("temperature")
         == 22
@@ -155,7 +155,7 @@ async def test_toggle_actuators(
     )
     await hass.async_block_till_done()
 
-    hass.states.get(f"{CLIMATE_DOMAIN}.test_hvac")
+    # hass.states.get(f"{CLIMATE_DOMAIN}.test_hvac")
 
     for heater in config_entry.options["heaters"]:
         heater_state = hass.states.get(heater)
@@ -165,3 +165,15 @@ async def test_toggle_actuators(
         cooler_state = hass.states.get(cooler)
         assert cooler_state
         assert cooler_state.state == HVACMode.OFF
+
+    hass.states.async_set("sensor.cooler_single_target", 25.5)
+    await hass.async_block_till_done()
+
+    for heater in config_entry.options["heaters"]:
+        heater_state = hass.states.get(heater)
+        assert heater_state
+        assert heater_state.state == HVACMode.OFF
+    for cooler in config_entry.options["coolers"]:
+        cooler_state = hass.states.get(cooler)
+        assert cooler_state
+        assert cooler_state.state == HVACMode.COOL

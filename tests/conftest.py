@@ -55,7 +55,7 @@ async def climate_entities(only_climate_for_demo, hass: HomeAssistant):
                     "min_temp": 15,
                     "max_temp": 32,
                     "ac_mode": True,
-                    "temperature": 32,
+                    "target_temp": 32,
                 },
                 {
                     "platform": "generic_thermostat",
