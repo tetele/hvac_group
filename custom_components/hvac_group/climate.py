@@ -544,7 +544,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 LOGGER.info(
                     (
                         "Obtained current and target temperatures. "
-                        "Climate group active. %s, %s, %s"
+                        "HVAC group active. %s, %s, %s"
                     ),
                     self._current_temperature,
                     self._target_temp_low,
