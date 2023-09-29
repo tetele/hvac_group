@@ -974,15 +974,16 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         """Set new target temperatures."""
         temp_low = kwargs.get(ATTR_TARGET_TEMP_LOW)
         temp_high = kwargs.get(ATTR_TARGET_TEMP_HIGH)
-
-        if temp_low is None and temp_high is None:
-            return
+        hvac_mode = kwargs.get(ATTR_HVAC_MODE)
 
         if temp_low is not None:
             self._target_temp_low = temp_low
 
         if temp_high is not None:
             self._target_temp_high = temp_high
+
+        if hvac_mode is not None and hvac_mode in self._attr_hvac_modes:
+            self._hvac_mode = hvac_mode
 
         self._require_actuator_mass_refresh = True
         await self.async_defer_or_update_ha_state(update_actuators=True)
