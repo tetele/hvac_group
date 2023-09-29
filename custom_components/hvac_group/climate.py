@@ -30,8 +30,6 @@ from homeassistant.const import (
     CONF_NAME,
     PRECISION_HALVES,
     PRECISION_TENTHS,
-    STATE_UNAVAILABLE,
-    STATE_UNKNOWN,
 )
 from homeassistant.core import Context, HomeAssistant, State, callback
 from homeassistant.helpers import entity_registry as er
@@ -627,20 +625,13 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 event.data["old_state"],
             )
 
-            update_actuators = False
-            if event.data["old_state"] is None or event.data["old_state"].state in (
-                STATE_UNKNOWN,
-                STATE_UNAVAILABLE,
-            ):
-                update_actuators = True
-
             if (
                 entity_id in self._heaters and not self._heaters[entity_id].initialized
             ) or (
                 entity_id in self._coolers and not self._coolers[entity_id].initialized
             ):
                 self._require_actuator_mass_refresh = True
-            await self.async_defer_or_update_ha_state(update_actuators=update_actuators)
+                await self.async_defer_or_update_ha_state()
 
         @callback
         async def async_sensor_state_changed_listener(
@@ -757,8 +748,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self._current_temperature = (
             float(new_temperature) if new_temperature is not None else new_temperature
         )
-        await self.async_run_hvac()
-        self.async_write_ha_state()
+
+        await self.async_defer_or_update_ha_state()
 
     @callback
     async def async_run_hvac(self, update_actuators: bool = False) -> None:
@@ -779,12 +770,13 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 LOGGER.info(
                     (
                         "Obtained current and target temperatures (%s -> %s-%s). "
-                        "Setting mode %s on HVAC group."
+                        "Setting mode %s on HVAC group %s."
                     ),
                     self._current_temperature,
                     self._target_temp_low,
                     self._target_temp_high,
                     self._hvac_mode,
+                    self.entity_id,
                 )
 
             if not self._active:
@@ -844,16 +836,18 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                     and self._hvac_mode in [HVACMode.COOL, HVACMode.HEAT_COOL]
                 ):
                     LOGGER.debug(
-                        "Turning on cooling %s",
+                        "Turning on cooling %s for HVAC group %s",
                         ",".join(self._coolers.keys()),
+                        self.entity_id,
                     )
                     await self._async_turn_on_coolers()
             elif (
                 self._are_coolers_active or update_actuators
             ) and self._toggle_coolers_on_threshold:
                 LOGGER.debug(
-                    "Turning off cooling %s",
+                    "Turning off cooling %s for HVAC group %s",
                     ",".join(self._coolers.keys()),
+                    self.entity_id,
                 )
                 await self._async_turn_off_coolers(pure=True)
 
@@ -865,16 +859,18 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                     and self._hvac_mode in [HVACMode.HEAT, HVACMode.HEAT_COOL]
                 ):
                     LOGGER.debug(
-                        "Turning on heating %s",
+                        "Turning on heating %s for HVAC group %s",
                         ",".join(self._heaters.keys()),
+                        self.entity_id,
                     )
                     await self._async_turn_on_heaters()
             elif (
                 self._are_heaters_active or update_actuators
             ) and self._toggle_heaters_on_threshold:
                 LOGGER.debug(
-                    "Turning off heating %s",
+                    "Turning off heating %s for HVAC group %s",
                     ",".join(self._heaters.keys()),
+                    self.entity_id,
                 )
                 await self._async_turn_off_heaters(pure=True)
 
@@ -961,17 +957,17 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set hvac mode callback."""
-        if hvac_mode in (
+        if hvac_mode not in (
             HVACMode.OFF,
             HVACMode.HEAT,
             HVACMode.COOL,
             HVACMode.HEAT_COOL,
         ):
-            self._require_actuator_mass_refresh = True
-        else:
-            LOGGER.error("Unrecognized hvac mode: %s", hvac_mode)
+            LOGGER.warning("Unrecognized hvac mode: %s", hvac_mode)
             return
 
+        self._hvac_mode = hvac_mode
+        self._require_actuator_mass_refresh = True
         await self.async_defer_or_update_ha_state(update_actuators=True)
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
