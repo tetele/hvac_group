@@ -1,5 +1,6 @@
 """Climate platform for HVAC group integration."""
 
+from __future__ import annotations
 import asyncio
 from enum import StrEnum
 from typing import Any
@@ -29,6 +30,8 @@ from homeassistant.const import (
     CONF_NAME,
     PRECISION_HALVES,
     PRECISION_TENTHS,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
 )
 from homeassistant.core import Context, HomeAssistant, State, callback
 from homeassistant.helpers import entity_registry as er
@@ -94,25 +97,23 @@ async def async_setup_entry(
         if len(target_entities) > 0:
             hvac_actuator_entity_ids.update({hvac_actuator_type: target_entities})
 
-    async_add_entities(
-        [
-            HvacGroupClimateEntity(
-                hass,
-                unique_id,
-                name,
-                sensor_entity_id,
-                temperature_unit,
-                min_temp,
-                max_temp,
-                precision=precision,
-                target_temperature_step=target_temperature_step,
-                heaters=hvac_actuator_entity_ids[CONF_HEATERS],
-                coolers=hvac_actuator_entity_ids[CONF_COOLERS],
-                toggle_coolers=toggle_coolers,
-                toggle_heaters=toggle_heaters,
-            )
-        ]
+    entity = HvacGroupClimateEntity(
+        hass,
+        unique_id,
+        name,
+        sensor_entity_id,
+        temperature_unit,
+        min_temp,
+        max_temp,
+        precision=precision,
+        target_temperature_step=target_temperature_step,
+        heaters=hvac_actuator_entity_ids[CONF_HEATERS],
+        coolers=hvac_actuator_entity_ids[CONF_COOLERS],
+        toggle_coolers=toggle_coolers,
+        toggle_heaters=toggle_heaters,
     )
+
+    async_add_entities([entity])
 
 
 class HvacActuatorType(StrEnum):
@@ -129,9 +130,10 @@ class HvacGroupActuator:
 
     def __init__(self, hass: HomeAssistant, entity_id: str) -> None:
         """Initialize a HVAC group actuator."""
-        self.hass = hass
+        self.hass: HomeAssistant = hass
 
-        self._entity_id = entity_id
+        self._entity_id: str = entity_id
+        self.initialized: bool = False
 
     @property
     def entity_id(self) -> str:
@@ -143,7 +145,37 @@ class HvacGroupActuator:
         """Get the current state of the actuator."""
         return self.hass.states.get(self.entity_id)
 
-    async def set_hvac_mode(
+    @property
+    def as_generic(self) -> HvacGroupActuator:
+        """Turn any subclass into a member of this class."""
+        if isinstance(self, HvacGroupActuator):
+            return self
+        return HvacGroupActuator(self.hass, self._entity_id)
+
+    @property
+    def as_heater(self) -> HvacGroupHeater:
+        """Turn any subclass into a HvacGroupHeater."""
+        if isinstance(self, HvacGroupHeater):
+            return self
+        return HvacGroupHeater(self.hass, self._entity_id)
+
+    @property
+    def as_cooler(self) -> HvacGroupCooler:
+        """Turn any subclass into a HvacGroupCooler."""
+        if isinstance(self, HvacGroupCooler):
+            return self
+        return HvacGroupCooler(self.hass, self._entity_id)
+
+    def _guess_target_temperature(
+        self,
+        temperature: float | None = None,
+        target_temp_low: float | None = None,
+        target_temp_high: float | None = None,
+    ) -> float | None:
+        """Get a target temperature given a triplet of target temperature, target temp low and high."""
+        return temperature
+
+    async def async_set_hvac_mode(
         self, hvac_mode: HVACMode, context: Context | None = None
     ) -> None:
         """Set the HVAC mode on an actuator."""
@@ -156,36 +188,49 @@ class HvacGroupActuator:
             blocking=True,
         )
 
-    async def set_temperature(
+    async def async_set_temperature(
         self,
         temperature: float | None = None,
         target_temp_low: float | None = None,
         target_temp_high: float | None = None,
+        hvac_mode: HVACMode | None = None,
         context: Context | None = None,
     ) -> None:
         """Set the reference temperature of an actuator."""
         # Prevent receiving both target temperature and target range
         assert None in (temperature, target_temp_high, target_temp_low)
 
+        if self.state is None:
+            LOGGER.warning(
+                "Attempting to set temperature of unloaded climate entity %s. Aborting",
+                self.entity_id,
+            )
+            return
+
         data = {}
         if (
-            self.state.attributes.get(ATTR_SUPPORTED_FEATURES)
+            self.state.attributes.get(ATTR_SUPPORTED_FEATURES, 0)
             & ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
         ):
             data = {
                 ATTR_TARGET_TEMP_LOW: target_temp_low or temperature,
                 ATTR_TARGET_TEMP_HIGH: target_temp_high or temperature,
             }
-        elif isinstance(self, HvacGroupHeater):
-            data = {ATTR_TEMPERATURE: target_temp_low or temperature}
         else:
-            data = {ATTR_TEMPERATURE: target_temp_high or temperature}
+            data = {
+                ATTR_TEMPERATURE: self._guess_target_temperature(
+                    temperature, target_temp_low, target_temp_high
+                )
+            }
+
+        if hvac_mode is not None:
+            data.update({ATTR_HVAC_MODE: hvac_mode})
 
         await self.hass.services.async_call(
             CLIMATE_DOMAIN,
             SERVICE_SET_TEMPERATURE,
             data,
-            target={ATTR_ENTITY_ID: self.entity_id},
+            target={ATTR_ENTITY_ID: self._entity_id},
             context=context,
             blocking=True,
         )
@@ -197,16 +242,34 @@ class HvacGroupActuator:
             & ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
         )
 
-    async def turn_on(self, context: Context | None = None) -> None:
+    async def async_turn_on(
+        self,
+        temperature: float | None = None,
+        target_temp_low: float | None = None,
+        target_temp_high: float | None = None,
+        context: Context | None = None,
+    ) -> None:
         """Turn on an actuator."""
-        hvac_mode = (
-            HVACMode.HEAT if isinstance(self, HvacGroupHeater) else HVACMode.COOL
+        LOGGER.warning(
+            "Generic actuator %s cannot be turned on, use set_hvac_mode instead.",
+            self.entity_id,
         )
-        await self.set_hvac_mode(hvac_mode, context)
 
-    async def turn_off(self, context: Context | None = None) -> None:
+    async def async_turn_off(
+        self,
+        temperature: float | None = None,
+        target_temp_low: float | None = None,
+        target_temp_high: float | None = None,
+        context: Context | None = None,
+    ) -> None:
         """Turn off an actuator."""
-        await self.set_hvac_mode(HVACMode.OFF, context)
+        await self.async_set_temperature(
+            temperature=temperature,
+            target_temp_high=target_temp_high,
+            target_temp_low=target_temp_low,
+            hvac_mode=HVACMode.OFF,
+            context=context,
+        )
 
 
 class HvacGroupHeater(HvacGroupActuator):
@@ -217,6 +280,31 @@ class HvacGroupHeater(HvacGroupActuator):
         super().__init__(hass, entity_id)
         self.actuator_type = HvacActuatorType.HEATER
 
+    async def async_turn_on(
+        self,
+        temperature: float | None = None,
+        target_temp_low: float | None = None,
+        target_temp_high: float | None = None,
+        context: Context | None = None,
+    ) -> None:
+        """Turn on a heater."""
+        await self.async_set_temperature(
+            temperature=temperature,
+            target_temp_high=target_temp_high,
+            target_temp_low=target_temp_low,
+            hvac_mode=HVACMode.HEAT,
+            context=context,
+        )
+
+    def _guess_target_temperature(
+        self,
+        temperature: float | None = None,
+        target_temp_low: float | None = None,
+        target_temp_high: float | None = None,
+    ) -> float | None:
+        """Get a target temperature given a triplet of target temperature, target temp low and high."""
+        return temperature or target_temp_low
+
 
 class HvacGroupCooler(HvacGroupActuator):
     """A cooler actuator for a HVAC group."""
@@ -226,19 +314,112 @@ class HvacGroupCooler(HvacGroupActuator):
         super().__init__(hass, entity_id)
         self.actuator_type = HvacActuatorType.COOLER
 
+    async def async_turn_on(
+        self,
+        temperature: float | None = None,
+        target_temp_low: float | None = None,
+        target_temp_high: float | None = None,
+        context: Context | None = None,
+    ) -> None:
+        """Turn on a cooler."""
+        await self.async_set_temperature(
+            temperature=temperature,
+            target_temp_high=target_temp_high,
+            target_temp_low=target_temp_low,
+            hvac_mode=HVACMode.COOL,
+            context=context,
+        )
+
+    def _guess_target_temperature(
+        self,
+        temperature: float | None = None,
+        target_temp_low: float | None = None,
+        target_temp_high: float | None = None,
+    ) -> float | None:
+        """Get a target temperature given a triplet of target temperature, target temp low and high."""
+        return temperature or target_temp_high
+
 
 class HvacGroupActuatorDict(dict[str, HvacGroupActuator]):
     """A special dictionary of actuators."""
 
-    async def async_turn_on(self, context: Context | None = None) -> None:
-        """Turn on all items of a dictionary."""
-        for actuator in self.values():
-            await actuator.turn_on(context)
+    @property
+    def as_heaters(self) -> HvacGroupActuatorDict:
+        """Return a dict of heaters from the current dict."""
 
-    async def async_turn_off(self, context: Context | None = None) -> None:
-        """Turn off all items of a dictionary."""
+        return HvacGroupActuatorDict(
+            {entity_id: actuator.as_heater for entity_id, actuator in self.items()}
+        )
+
+    @property
+    def as_coolers(self) -> HvacGroupActuatorDict:
+        """Return a dict of coolers from the current dict."""
+
+        return HvacGroupActuatorDict(
+            {entity_id: actuator.as_cooler for entity_id, actuator in self.items()}
+        )
+
+    async def async_turn_on(
+        self,
+        temperature: float | None = None,
+        target_temp_low: float | None = None,
+        target_temp_high: float | None = None,
+        context: Context | None = None,
+    ) -> None:
+        """Turn on all HvacGroupActuator items of a dictionary."""
         for actuator in self.values():
-            await actuator.turn_off(context)
+            await actuator.async_turn_on(
+                temperature=temperature,
+                target_temp_high=target_temp_high,
+                target_temp_low=target_temp_low,
+                context=context,
+            )
+
+    async def async_turn_off(
+        self,
+        temperature: float | None = None,
+        target_temp_low: float | None = None,
+        target_temp_high: float | None = None,
+        context: Context | None = None,
+    ) -> None:
+        """Turn off all HvacGroupActuator items of a dictionary."""
+        for actuator in self.values():
+            await actuator.async_turn_off(
+                temperature=temperature,
+                target_temp_high=target_temp_high,
+                target_temp_low=target_temp_low,
+                context=context,
+            )
+
+    async def async_set_hvac_mode(
+        self, hvac_mode: HVACMode, context: Context | None = None
+    ) -> None:
+        """Set HVAC mode for all HvacGroupActuator items of a dictionary."""
+        for actuator in self.values():
+            await actuator.async_set_hvac_mode(hvac_mode, context)
+
+    async def async_set_temperature(
+        self,
+        temperature: float | None = None,
+        target_temp_low: float | None = None,
+        target_temp_high: float | None = None,
+        hvac_mode: HVACMode | None = None,
+        context: Context | None = None,
+    ) -> None:
+        """Set target temperature all HvacGroupActuator items of a dictionary."""
+        for actuator in self.values():
+            await actuator.async_set_temperature(
+                temperature=temperature,
+                target_temp_high=target_temp_high,
+                target_temp_low=target_temp_low,
+                hvac_mode=hvac_mode,
+                context=context,
+            )
+
+    def mark_initialized(self) -> None:
+        """Set all members as initialized."""
+        for actuator in self.values():
+            actuator.initialized = True
 
 
 class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
@@ -247,7 +428,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
     _heaters: HvacGroupActuatorDict = HvacGroupActuatorDict()
     _coolers: HvacGroupActuatorDict = HvacGroupActuatorDict()
 
-    _loaded = False
+    _require_actuator_mass_refresh: bool = False
 
     def __init__(
         self,
@@ -262,8 +443,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         target_temp_high: float | None = None,
         target_temp_low: float | None = None,
         target_temperature_step: float | None = None,
-        heaters: set[str] = None,
-        coolers: set[str] = None,
+        heaters: set[str] | None = None,
+        coolers: set[str] | None = None,
         hvac_mode: HVACMode | None = None,
         toggle_coolers: bool = False,
         toggle_heaters: bool = False,
@@ -291,10 +472,12 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         for cooler_entity_id in coolers:
             self._add_cooler(cooler_entity_id)
 
-        self._is_cooling_active = False
-        self._is_heating_active = False
+        self._is_heating = False
+        self._is_cooling = False
+        self._are_coolers_active = False
+        self._are_heaters_active = False
 
-        self._current_temperature = None
+        self._current_temperature: float | None = None
         self._min_temp = min_temp or DEFAULT_MIN_TEMP
         self._max_temp = max_temp or DEFAULT_MAX_TEMP
         self._target_temp_low = target_temp_low
@@ -303,7 +486,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self._toggle_heaters_on_threshold = toggle_heaters
         self._toggle_coolers_on_threshold = toggle_coolers
 
-        self._temp_lock = asyncio.Lock()
+        self._hvac_running_lock = asyncio.Lock()
+        self._changing_actuators_lock = asyncio.Lock()
         self._active = False
 
     @property
@@ -317,9 +501,9 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
         if self._hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
-        if self._is_heating_active:
+        if self._is_heating:
             return HVACAction.HEATING
-        if self._is_cooling_active:
+        if self._is_cooling:
             return HVACAction.COOLING
         return HVACAction.IDLE
 
@@ -368,12 +552,23 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         return self.max_temp
 
     @property
-    def target_temperature_step(self):
+    def target_temperature_step(self) -> float:
         """Return the supported step of target temperature."""
         if self._temp_target_temperature_step is not None:
             return self._temp_target_temperature_step
         # if a target_temperature_step is not defined, fallback to equal the precision
         return self.precision
+
+    @property
+    def common_actuators(self) -> HvacGroupActuatorDict:
+        """Return a dict of actuators that are both heaters and coolers."""
+        return HvacGroupActuatorDict(
+            {
+                entity_id: actuator.as_generic
+                for entity_id, actuator in self._coolers.items()
+                if entity_id in self._heaters
+            }
+        )
 
     async def async_added_to_hass(self) -> None:
         """Register listeners."""
@@ -387,18 +582,65 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 continue
             self.async_update_supported_features(entity_id, cooler.state)
 
+        # Check If we have an old state
+        if (old_state := await self.async_get_last_state()) is not None:
+            # If we have no initial temperature, restore
+            target_temp_low = self._target_temp_low or old_state.attributes.get(
+                ATTR_TARGET_TEMP_LOW, self.min_temp
+            )
+            target_temp_high = self._target_temp_high or old_state.attributes.get(
+                ATTR_TARGET_TEMP_HIGH, self.max_temp
+            )
+            await self.async_set_temperature(
+                target_temp_low=target_temp_low, target_temp_high=target_temp_high
+            )
+
+            if self._hvac_mode is None and old_state.state:
+                await self.async_set_hvac_mode(old_state.state)
+
+        else:
+            # No previous state, try and restore defaults
+            if self._target_temp_low is None:
+                self._target_temp_low = self.min_temp
+            if self._target_temp_high is None:
+                self._target_temp_high = self.max_temp
+            LOGGER.warning(
+                "No previously saved temperature, setting to %s, %s",
+                self._target_temp_low,
+                self._target_temp_high,
+            )
+
+        # Set default state to off
+        if self._hvac_mode is None:  # TODO is none
+            self._hvac_mode = HVACMode.OFF
+
         @callback
         async def async_actuator_state_changed_listener(
             event: EventType[EventStateChangedData],
         ) -> None:
-            """Handle child updates."""
+            """Handle actuator updates, like min/max temp changes."""
+            entity_id = event.data["entity_id"]
             self.async_set_context(event.context)
             self.async_update_supported_features(
-                event.data["entity_id"],
+                entity_id,
                 event.data["new_state"],
                 event.data["old_state"],
             )
-            await self.async_defer_or_update_ha_state()
+
+            update_actuators = False
+            if event.data["old_state"] is None or event.data["old_state"].state in (
+                STATE_UNKNOWN,
+                STATE_UNAVAILABLE,
+            ):
+                update_actuators = True
+
+            if (
+                entity_id in self._heaters and not self._heaters[entity_id].initialized
+            ) or (
+                entity_id in self._coolers and not self._coolers[entity_id].initialized
+            ):
+                self._require_actuator_mass_refresh = True
+            await self.async_defer_or_update_ha_state(update_actuators=update_actuators)
 
         @callback
         async def async_sensor_state_changed_listener(
@@ -429,48 +671,21 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         )
 
         async def _update_at_start(_: HomeAssistant) -> None:
-            await self.async_run_hvac(force=True)
-            self.async_write_ha_state()
+            """Initialize the functioning of the group."""
+            self._require_actuator_mass_refresh = True
+            await self.async_defer_or_update_ha_state(update_actuators=True)
 
         self.async_on_remove(start.async_at_start(self.hass, _update_at_start))
 
-        # Check If we have an old state
-        if (old_state := await self.async_get_last_state()) is not None:
-            # If we have no initial temperature, restore
-            if self._target_temp_low is None:
-                self._target_temp_low = old_state.attributes.get(
-                    ATTR_TARGET_TEMP_LOW, self.min_temp
-                )
-            if self._target_temp_high is None:
-                self._target_temp_high = old_state.attributes.get(
-                    ATTR_TARGET_TEMP_HIGH, self.max_temp
-                )
-            if not self._hvac_mode and old_state.state:
-                self._hvac_mode = old_state.state
-
-        else:
-            # No previous state, try and restore defaults
-            if self._target_temp_low is None:
-                self._target_temp_low = self.min_temp
-            if self._target_temp_high is None:
-                self._target_temp_high = self.max_temp
-            LOGGER.warning(
-                "No previously saved temperature, setting to %s, %s",
-                self._target_temp_low,
-                self._target_temp_high,
-            )
-
-        # Set default state to off
-        if not self._hvac_mode:
-            self._hvac_mode = HVACMode.OFF
-
     @callback
-    async def async_defer_or_update_ha_state(self) -> None:
+    async def async_defer_or_update_ha_state(
+        self, update_actuators: bool = False
+    ) -> None:
         """Only update once at start."""
         if not self.hass.is_running:
             return
 
-        await self.async_run_hvac()
+        await self.async_run_hvac(update_actuators=update_actuators)
         self.async_write_ha_state()
 
     @callback
@@ -498,6 +713,9 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                     new_state.attributes.get(ATTR_MIN_TEMP, self._min_temp),
                 ),
             )
+            if self._target_temp_low is not None:
+                self._target_temp_low = max(self._target_temp_low, self._min_temp)
+
             self._max_temp = max(
                 new_state.attributes.get(ATTR_MIN_TEMP, self._max_temp),
                 min(
@@ -505,8 +723,6 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                     new_state.attributes.get(ATTR_MAX_TEMP, self._max_temp),
                 ),
             )
-            if self._target_temp_low is not None:
-                self._target_temp_low = max(self._target_temp_low, self._min_temp)
             if self._target_temp_high is not None:
                 self._target_temp_high = min(self._target_temp_high, self._max_temp)
 
@@ -521,71 +737,183 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         if new_state is None:
             return
 
-        current_temperature = (
+        # Current temperature can be retrieved from a `climate` or `sensor` entity
+        new_temperature = (
             new_state.attributes.get(ATTR_CURRENT_TEMPERATURE)
             if new_state.domain == CLIMATE_DOMAIN
             else new_state.state
         )
+        old_temperature = None
+        if old_state is not None:
+            old_temperature = (
+                old_state.attributes.get(ATTR_CURRENT_TEMPERATURE)
+                if old_state.domain == CLIMATE_DOMAIN
+                else old_state.state
+            )
 
-        self._current_temperature = current_temperature
+        if new_temperature == old_temperature:
+            return
+
+        self._current_temperature = (
+            float(new_temperature) if new_temperature is not None else new_temperature
+        )
         await self.async_run_hvac()
+        self.async_write_ha_state()
 
     @callback
-    async def async_run_hvac(self, force: bool = False) -> None:
+    async def async_run_hvac(self, update_actuators: bool = False) -> None:
         """Update the actuators."""
 
-        async with self._temp_lock:
+        # If the update was requested because many actuators are being toggled, don't
+        if self._changing_actuators_lock.locked():
+            return
+
+        async with self._hvac_running_lock:
             if not self._active and None not in (
                 self._current_temperature,
                 self._target_temp_low,
                 self._target_temp_high,
+                self._hvac_mode,
             ):
                 self._active = True
                 LOGGER.info(
                     (
-                        "Obtained current and target temperatures. "
-                        "HVAC group active. %s, %s, %s"
+                        "Obtained current and target temperatures (%s -> %s-%s). "
+                        "Setting mode %s on HVAC group."
                     ),
                     self._current_temperature,
                     self._target_temp_low,
                     self._target_temp_high,
+                    self._hvac_mode,
                 )
 
             if not self._active:
                 return
 
+            await self.async_control_actuators(
+                update_actuators=update_actuators,
+                force_update_all=self._require_actuator_mass_refresh,
+            )
+
+    async def async_control_actuators(
+        self, update_actuators: bool = False, force_update_all: bool = False
+    ):
+        """Control actuators based on needs."""
+
+        try:
+            if force_update_all:
+                self._require_actuator_mass_refresh = False
+                LOGGER.debug("Force updating the state of actuators")
+
+                await self._changing_actuators_lock.acquire()
+
+                match self._hvac_mode:
+                    case HVACMode.HEAT:
+                        await self._async_turn_off_coolers(pure=True)
+                        await self._async_turn_on_heaters()
+                    case HVACMode.COOL:
+                        await self._async_turn_off_heaters(pure=True)
+                        await self._async_turn_on_coolers()
+                    case HVACMode.HEAT_COOL:
+                        await self._async_turn_on_heaters(pure=True)
+                        await self._async_turn_on_coolers(pure=True)
+                    case HVACMode.OFF:
+                        await self._async_turn_off_coolers()
+                        await self._async_turn_off_heaters(
+                            pure=True
+                        )  # avoid turning off common elements twice
+
+                self._heaters.mark_initialized()
+                self._coolers.mark_initialized()
+
+            needs_cooling = False
+            needs_heating = False
+
+            # Assertions are just for shutting up mypy
             assert self._target_temp_low
             assert self._target_temp_high
             assert self._current_temperature
+
             too_cold = self._target_temp_low >= self._current_temperature
             too_hot = self._current_temperature >= self._target_temp_high
             if too_hot:
-                if not self._is_cooling_active or force:
-                    LOGGER.info(
+                needs_cooling = True
+                if (
+                    (not self._are_coolers_active or update_actuators)
+                    and self._toggle_coolers_on_threshold
+                    and self._hvac_mode in [HVACMode.COOL, HVACMode.HEAT_COOL]
+                ):
+                    LOGGER.debug(
                         "Turning on cooling %s",
                         ",".join(self._coolers.keys()),
                     )
-                await self._async_turn_on_coolers(force=force)
-            elif self._is_cooling_active or force:
-                LOGGER.info(
+                    await self._async_turn_on_coolers()
+            elif (
+                self._are_coolers_active or update_actuators
+            ) and self._toggle_coolers_on_threshold:
+                LOGGER.debug(
                     "Turning off cooling %s",
                     ",".join(self._coolers.keys()),
                 )
-                await self._async_turn_off_coolers(force=force)
+                await self._async_turn_off_coolers(pure=True)
 
             if too_cold:
-                if not self._is_heating_active or force:
-                    LOGGER.info(
+                needs_heating = True
+                if (
+                    (not self._are_heaters_active or update_actuators)
+                    and self._toggle_heaters_on_threshold
+                    and self._hvac_mode in [HVACMode.HEAT, HVACMode.HEAT_COOL]
+                ):
+                    LOGGER.debug(
                         "Turning on heating %s",
                         ",".join(self._heaters.keys()),
                     )
-                await self._async_turn_on_heaters(force=force)
-            elif self._is_heating_active or force:
-                LOGGER.info(
+                    await self._async_turn_on_heaters()
+            elif (
+                self._are_heaters_active or update_actuators
+            ) and self._toggle_heaters_on_threshold:
+                LOGGER.debug(
                     "Turning off heating %s",
                     ",".join(self._heaters.keys()),
                 )
-                await self._async_turn_off_heaters(force=force)
+                await self._async_turn_off_heaters(pure=True)
+
+            # You can't need heating and cooling simultaneously
+            assert not needs_cooling or not needs_heating
+
+            if needs_heating:
+                if not self._is_heating and self._hvac_mode in [
+                    HVACMode.HEAT,
+                    HVACMode.HEAT_COOL,
+                ]:
+                    await self._async_set_common_actuators_as_heaters()
+                elif force_update_all and self._hvac_mode == HVACMode.HEAT_COOL:
+                    await self._async_set_common_actuators_as_heaters()
+            elif needs_cooling:
+                if not self._is_cooling and self._hvac_mode in [
+                    HVACMode.COOL,
+                    HVACMode.HEAT_COOL,
+                ]:
+                    await self._async_set_common_actuators_as_coolers()
+                elif force_update_all and self._hvac_mode == HVACMode.HEAT_COOL:
+                    await self._async_set_common_actuators_as_coolers()
+            else:
+                if (
+                    (self._is_heating or update_actuators)
+                    and self._toggle_heaters_on_threshold
+                ) or (
+                    (self._is_cooling or update_actuators)
+                    and self._toggle_coolers_on_threshold
+                ):
+                    await self.common_actuators.async_turn_off()
+                elif force_update_all and self._hvac_mode == HVACMode.HEAT_COOL:
+                    await self._async_set_common_actuators_as_heaters()
+
+            self._is_cooling = needs_cooling
+            self._is_heating = needs_heating
+        finally:
+            if self._changing_actuators_lock.locked():
+                self._changing_actuators_lock.release()
 
     def _add_heater(self, heater_entity_id: str) -> None:
         """Add a heater actuator referenced by entity_id."""
@@ -633,32 +961,18 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set hvac mode callback."""
-        if hvac_mode in (HVACMode.HEAT, HVACMode.COOL, HVACMode.HEAT_COOL):
-            self._hvac_mode = hvac_mode
-            match hvac_mode:
-                case HVACMode.HEAT:
-                    # Firstly turn off coolers so that if a device is both a cooler and a heater to make sure to start it in the proper mode
-                    await self._async_turn_off_coolers()
-                    await self._async_turn_on_heaters()
-                case HVACMode.COOL:
-                    await self._async_turn_off_heaters()
-                    await self._async_turn_on_coolers()
-                case HVACMode.HEAT_COOL:
-                    await self._async_turn_on_heaters()
-                    await self._async_turn_on_coolers()
-            await self.async_run_hvac()
-        elif hvac_mode == HVACMode.OFF:
-            self._hvac_mode = HVACMode.OFF
-            await self._coolers.async_turn_off(self._context)
-            await self._heaters.async_turn_off(self._context)
+        if hvac_mode in (
+            HVACMode.OFF,
+            HVACMode.HEAT,
+            HVACMode.COOL,
+            HVACMode.HEAT_COOL,
+        ):
+            self._require_actuator_mass_refresh = True
         else:
             LOGGER.error("Unrecognized hvac mode: %s", hvac_mode)
             return
 
-        await self._async_set_actuator_temperatures()
-
-        # Ensure we update the current operation after changing the mode
-        self.async_write_ha_state()
+        await self.async_defer_or_update_ha_state(update_actuators=True)
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperatures."""
@@ -667,58 +981,135 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
         if temp_low is None and temp_high is None:
             return
+
         if temp_low is not None:
             self._target_temp_low = temp_low
 
         if temp_high is not None:
             self._target_temp_high = temp_high
 
-        await self._async_set_actuator_temperatures()
-        await self.async_run_hvac()
+        self._require_actuator_mass_refresh = True
+        await self.async_defer_or_update_ha_state(update_actuators=True)
 
-        self.async_write_ha_state()
-
-    async def _async_set_actuator_temperatures(self):
-        """Update temperatures on heaters/coolers based on operation mode."""
-        for heater in self._heaters.values():
-            if not heater.supports_ranged_target_temperature():
-                if heater.state.state != HVACMode.HEAT:
-                    continue
-            await heater.set_temperature(
-                target_temp_low=self._target_temp_low,
-                target_temp_high=self._target_temp_high,
-                context=self._context,
+    async def _async_turn_on_coolers(self, pure: bool = False) -> None:
+        """Turn on coolers. If `pure` is `True`, it only affects coolers which are not also heaters."""
+        self._are_coolers_active = True
+        targets: HvacGroupActuatorDict = (
+            HvacGroupActuatorDict(
+                {
+                    entity_id: cooler
+                    for entity_id, cooler in self._coolers.items()
+                    if entity_id not in self._heaters
+                }
             )
-        for cooler in self._coolers.values():
-            if not cooler.supports_ranged_target_temperature():
-                if cooler.state.state != HVACMode.COOL:
-                    continue
-            await cooler.set_temperature(
-                target_temp_low=self._target_temp_low,
-                target_temp_high=self._target_temp_high,
-                context=self._context,
+            if pure
+            else self._coolers
+        )
+        await targets.async_turn_on(
+            temperature=self.target_temperature,
+            target_temp_high=self.target_temperature_high,
+            target_temp_low=self.target_temperature_low,
+            context=self._context,
+        )
+
+    async def _async_turn_off_coolers(self, pure: bool = False) -> None:
+        """Turn off coolers. If `pure` is `True`, it only affects coolers which are not also heaters."""
+        self._are_coolers_active = False
+        targets: HvacGroupActuatorDict = (
+            HvacGroupActuatorDict(
+                {
+                    entity_id: cooler
+                    for entity_id, cooler in self._coolers.items()
+                    if entity_id not in self._heaters
+                }
             )
+            if pure
+            else self._coolers
+        )
+        await targets.async_turn_off(
+            temperature=self.target_temperature,
+            target_temp_high=self.target_temperature_high,
+            target_temp_low=self.target_temperature_low,
+            context=self._context,
+        )
 
-    async def _async_turn_on_coolers(self, force: bool = False) -> None:
-        """Turn on coolers if they don't toggle automatically."""
-        self._is_cooling_active = True
-        if self._toggle_coolers_on_threshold or force:
-            await self._coolers.async_turn_on(self._context)
+    async def _async_turn_on_heaters(self, pure: bool = False) -> None:
+        """Turn on heaters. If `pure` is `True`, it only affects heaters which are not also coolers."""
+        self._are_heaters_active = True
+        targets: HvacGroupActuatorDict = (
+            HvacGroupActuatorDict(
+                {
+                    entity_id: heater
+                    for entity_id, heater in self._heaters.items()
+                    if entity_id not in self._coolers
+                }
+            )
+            if pure
+            else self._heaters
+        )
+        await targets.async_turn_on(
+            temperature=self.target_temperature,
+            target_temp_high=self.target_temperature_high,
+            target_temp_low=self.target_temperature_low,
+            context=self._context,
+        )
 
-    async def _async_turn_off_coolers(self, force: bool = False) -> None:
-        """Turn off coolers if they don't toggle automatically."""
-        self._is_cooling_active = False
-        if self._toggle_coolers_on_threshold or force:
-            await self._coolers.async_turn_off(self._context)
+    async def _async_turn_off_heaters(self, pure: bool = False) -> None:
+        """Turn off heaters. If `pure` is `True`, it only affects heaters which are not also coolers."""
+        self._are_heaters_active = False
+        targets: HvacGroupActuatorDict = (
+            HvacGroupActuatorDict(
+                {
+                    entity_id: heater
+                    for entity_id, heater in self._heaters.items()
+                    if entity_id not in self._coolers
+                }
+            )
+            if pure
+            else self._heaters
+        )
+        await targets.async_turn_off(
+            temperature=self.target_temperature,
+            target_temp_high=self.target_temperature_high,
+            target_temp_low=self.target_temperature_low,
+            context=self._context,
+        )
 
-    async def _async_turn_on_heaters(self, force: bool = False) -> None:
-        """Turn on heaters if they don't toggle automatically."""
-        self._is_cooling_active = True
-        if self._toggle_heaters_on_threshold or force:
-            await self._heaters.async_turn_on(self._context)
+    async def _async_set_common_actuators_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        """Turn on common actuators to a certain HVAC mode."""
+        await self.common_actuators.async_set_temperature(
+            temperature=self.target_temperature,
+            target_temp_high=self.target_temperature_high,
+            target_temp_low=self.target_temperature_low,
+            hvac_mode=hvac_mode,
+            context=self._context,
+        )
 
-    async def _async_turn_off_heaters(self, force: bool = False) -> None:
-        """Turn off heaters if they don't toggle automatically."""
-        self._is_cooling_active = False
-        if self._toggle_heaters_on_threshold or force:
-            await self._heaters.async_turn_off(self._context)
+    async def _async_set_common_actuators_temperature(self) -> None:
+        """Set temperature on common actuators."""
+        await self.common_actuators.async_set_temperature(
+            temperature=self.target_temperature,
+            target_temp_high=self.target_temperature_high,
+            target_temp_low=self.target_temperature_low,
+            context=self._context,
+        )
+
+    async def _async_set_common_actuators_as_heaters(self) -> None:
+        """Set common actuators to work as heaters."""
+        await self.common_actuators.as_heaters.async_set_temperature(
+            temperature=self.target_temperature,
+            target_temp_high=self.target_temperature_high,
+            target_temp_low=self.target_temperature_low,
+            hvac_mode=HVACMode.HEAT,
+            context=self._context,
+        )
+
+    async def _async_set_common_actuators_as_coolers(self) -> None:
+        """Set common actuators to work as coolers."""
+        await self.common_actuators.as_heaters.async_set_temperature(
+            temperature=self.target_temperature,
+            target_temp_high=self.target_temperature_high,
+            target_temp_low=self.target_temperature_low,
+            hvac_mode=HVACMode.COOL,
+            context=self._context,
+        )
