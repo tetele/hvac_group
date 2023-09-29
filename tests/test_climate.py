@@ -4,7 +4,7 @@ from typing import Any
 import copy
 
 import pytest
-from homeassistant.components.climate import ClimateEntityFeature, HVACAction, HVACMode
+from homeassistant.components.climate import ClimateEntityFeature, HVACMode
 from homeassistant.const import PRECISION_HALVES, PRECISION_TENTHS
 from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import NoEntitySpecifiedError
@@ -16,6 +16,9 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.hvac_group import DOMAIN
 from custom_components.hvac_group.climate import (
     HvacGroupClimateEntity,
+    HvacGroupActuator,
+    HvacGroupCooler,
+    HvacGroupHeater,
     async_setup_entry,
 )
 
@@ -135,7 +138,7 @@ async def hvac_group(hass: HomeAssistant) -> HvacGroupClimateEntity:
 
     mock_async_add_entities.assert_called()
 
-    hvac_entity: HvacGroupClimateEntity = mock_async_add_entities.call_args[0][0][0]
+    hvac_entity: HvacGroupClimateEntity = mock_async_add_entities.call_args.args[0][0]
 
     return hvac_entity
 
@@ -144,7 +147,7 @@ async def hvac_group(hass: HomeAssistant) -> HvacGroupClimateEntity:
 async def test_entry(hvac_group: HvacGroupClimateEntity, hass: HomeAssistant) -> None:
     """Test component creation."""
 
-    assert hvac_group.temperature_sensor_entity_id == "climate.heater"
+    assert hvac_group._temperature_sensor_entity_id == "climate.heater"
 
     assert hvac_group.precision == PRECISION_TENTHS
     assert hvac_group.target_temperature_step == PRECISION_HALVES
@@ -154,47 +157,31 @@ async def test_entry(hvac_group: HvacGroupClimateEntity, hass: HomeAssistant) ->
     assert HVACMode.HEAT not in hvac_group.hvac_modes
     assert HVACMode.COOL not in hvac_group.hvac_modes
 
-    assert hvac_group.hvac_mode == HVACMode.OFF
-    assert hvac_group.hvac_action == HVACAction.OFF
 
-
-@pytest.mark.asyncio
-async def test_sensor_changes(
-    hvac_group: HvacGroupClimateEntity, hass: HomeAssistant
+@pytest.mark.parametrize(
+    ("temperature", "temp_low", "temp_high", "actuator_class", "expected"),
+    [
+        (21, None, None, HvacGroupCooler, 21),
+        (None, 19, 26, HvacGroupCooler, 26),
+        (21, None, None, HvacGroupHeater, 21),
+        (None, 19, 26, HvacGroupHeater, 19),
+        (21, None, None, HvacGroupActuator, 21),
+        (None, 12, 16, HvacGroupActuator, None),
+    ],
+)
+def test_guess_temperature(
+    hass: HomeAssistant, temperature, temp_high, temp_low, actuator_class, expected
 ) -> None:
-    """Test behavior after temperature sensor change."""
-
-    with patch("homeassistant.core.ServiceRegistry.async_call") as hass_service_call:
-        try:
-            await hvac_group._async_sensor_changed(
-                _generate_event(
-                    hass, "climate.heater", attributes={"current_temperature": 21.3}
-                )
-            )
-        except NoEntitySpecifiedError:
-            assert hvac_group.current_temperature == 21.3
-            assert hass_service_call.called
-        else:
-            pass
-
-
-@pytest.mark.asyncio
-async def test_member_changes(
-    initialize_actuators, hvac_group: HvacGroupClimateEntity, hass: HomeAssistant
-) -> None:
-    """Test behavior after member min/max temperatures change."""
-
-    try:
-        await hvac_group._async_member_changed(
-            _generate_event(
-                hass, "climate.hvac", attributes={"min_temp": 15, "max_temp": 32}
-            )
+    """Test temperature guessing."""
+    actuator = actuator_class(hass, "test.id")
+    assert (
+        actuator._guess_target_temperature(
+            temperature=temperature,
+            target_temp_low=temp_low,
+            target_temp_high=temp_high,
         )
-    except NoEntitySpecifiedError:
-        assert hvac_group.min_temp == 16
-        assert hvac_group.max_temp == 28
-    else:
-        pass
+        == expected
+    )
 
 
 @pytest.mark.asyncio

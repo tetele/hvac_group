@@ -1,4 +1,4 @@
-"""Custom integration to integrate integration_blueprint with Home Assistant.
+"""Custom helper integration for Home Assistant that groups thermostats.
 
 For more details about this integration, please refer to
 https://github.com/tetele/hvac_group
