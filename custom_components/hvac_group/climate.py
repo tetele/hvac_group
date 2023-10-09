@@ -125,6 +125,7 @@ class HvacGroupActuator:
     """An actuator (heater/cooler) from a HVAC group."""
 
     actuator_type: HvacActuatorType | None = None
+    _context: Context | None = None
 
     def __init__(self, hass: HomeAssistant, entity_id: str) -> None:
         """Initialize a HVAC group actuator."""
@@ -164,6 +165,10 @@ class HvacGroupActuator:
             return self
         return HvacGroupCooler(self.hass, self._entity_id)
 
+    def set_context(self, context: Context | None) -> None:
+        """Set the context."""
+        self._context = context
+
     def _guess_target_temperature(
         self,
         temperature: float | None = None,
@@ -173,17 +178,10 @@ class HvacGroupActuator:
         """Get a target temperature given a triplet of target temperature, target temp low and high."""
         return temperature
 
-    async def async_set_hvac_mode(
-        self, hvac_mode: HVACMode, context: Context | None = None
-    ) -> None:
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set the HVAC mode on an actuator."""
-        await self.hass.services.async_call(
-            CLIMATE_DOMAIN,
-            SERVICE_SET_HVAC_MODE,
-            {ATTR_HVAC_MODE: hvac_mode},
-            target={ATTR_ENTITY_ID: self.entity_id},
-            context=context,
-            blocking=True,
+        await self._async_call_climate_service(
+            SERVICE_SET_HVAC_MODE, {ATTR_HVAC_MODE: hvac_mode}
         )
 
     async def async_set_temperature(
@@ -192,7 +190,6 @@ class HvacGroupActuator:
         target_temp_low: float | None = None,
         target_temp_high: float | None = None,
         hvac_mode: HVACMode | None = None,
-        context: Context | None = None,
     ) -> None:
         """Set the reference temperature of an actuator."""
         # Prevent receiving both target temperature and target range
@@ -224,12 +221,23 @@ class HvacGroupActuator:
         if hvac_mode is not None:
             data.update({ATTR_HVAC_MODE: hvac_mode})
 
+        await self._async_call_climate_service(
+            self._entity_id, SERVICE_SET_TEMPERATURE, data
+        )
+
+    async def _async_call_climate_service(
+        self,
+        entity_id: str | None,  # used only for tests
+        service: str,
+        data: dict[str, Any] | None,
+    ) -> None:
+        """Call a climate service."""
         await self.hass.services.async_call(
             CLIMATE_DOMAIN,
-            SERVICE_SET_TEMPERATURE,
+            service,
             data,
             target={ATTR_ENTITY_ID: self._entity_id},
-            context=context,
+            context=self._context,
             blocking=True,
         )
 
@@ -245,7 +253,6 @@ class HvacGroupActuator:
         temperature: float | None = None,
         target_temp_low: float | None = None,
         target_temp_high: float | None = None,
-        context: Context | None = None,
     ) -> None:
         """Turn on an actuator."""
         LOGGER.warning(
@@ -258,7 +265,6 @@ class HvacGroupActuator:
         temperature: float | None = None,
         target_temp_low: float | None = None,
         target_temp_high: float | None = None,
-        context: Context | None = None,
     ) -> None:
         """Turn off an actuator."""
         await self.async_set_temperature(
@@ -266,7 +272,6 @@ class HvacGroupActuator:
             target_temp_high=target_temp_high,
             target_temp_low=target_temp_low,
             hvac_mode=HVACMode.OFF,
-            context=context,
         )
 
 
@@ -283,7 +288,6 @@ class HvacGroupHeater(HvacGroupActuator):
         temperature: float | None = None,
         target_temp_low: float | None = None,
         target_temp_high: float | None = None,
-        context: Context | None = None,
     ) -> None:
         """Turn on a heater."""
         await self.async_set_temperature(
@@ -291,7 +295,6 @@ class HvacGroupHeater(HvacGroupActuator):
             target_temp_high=target_temp_high,
             target_temp_low=target_temp_low,
             hvac_mode=HVACMode.HEAT,
-            context=context,
         )
 
     def _guess_target_temperature(
@@ -317,7 +320,6 @@ class HvacGroupCooler(HvacGroupActuator):
         temperature: float | None = None,
         target_temp_low: float | None = None,
         target_temp_high: float | None = None,
-        context: Context | None = None,
     ) -> None:
         """Turn on a cooler."""
         await self.async_set_temperature(
@@ -325,7 +327,6 @@ class HvacGroupCooler(HvacGroupActuator):
             target_temp_high=target_temp_high,
             target_temp_low=target_temp_low,
             hvac_mode=HVACMode.COOL,
-            context=context,
         )
 
     def _guess_target_temperature(
@@ -366,11 +367,11 @@ class HvacGroupActuatorDict(dict[str, HvacGroupActuator]):
     ) -> None:
         """Turn on all HvacGroupActuator items of a dictionary."""
         for actuator in self.values():
+            actuator.set_context(context)
             await actuator.async_turn_on(
                 temperature=temperature,
                 target_temp_high=target_temp_high,
                 target_temp_low=target_temp_low,
-                context=context,
             )
 
     async def async_turn_off(
@@ -382,11 +383,11 @@ class HvacGroupActuatorDict(dict[str, HvacGroupActuator]):
     ) -> None:
         """Turn off all HvacGroupActuator items of a dictionary."""
         for actuator in self.values():
+            actuator.set_context(context)
             await actuator.async_turn_off(
                 temperature=temperature,
                 target_temp_high=target_temp_high,
                 target_temp_low=target_temp_low,
-                context=context,
             )
 
     async def async_set_hvac_mode(
@@ -394,7 +395,8 @@ class HvacGroupActuatorDict(dict[str, HvacGroupActuator]):
     ) -> None:
         """Set HVAC mode for all HvacGroupActuator items of a dictionary."""
         for actuator in self.values():
-            await actuator.async_set_hvac_mode(hvac_mode, context)
+            actuator.set_context(context)
+            await actuator.async_set_hvac_mode(hvac_mode)
 
     async def async_set_temperature(
         self,
@@ -406,12 +408,12 @@ class HvacGroupActuatorDict(dict[str, HvacGroupActuator]):
     ) -> None:
         """Set target temperature all HvacGroupActuator items of a dictionary."""
         for actuator in self.values():
+            actuator.set_context(context)
             await actuator.async_set_temperature(
                 temperature=temperature,
                 target_temp_high=target_temp_high,
                 target_temp_low=target_temp_low,
                 hvac_mode=hvac_mode,
-                context=context,
             )
 
     def mark_initialized(self) -> None:
@@ -580,6 +582,15 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 continue
             self.async_update_supported_features(entity_id, cooler.state)
 
+        if (
+            temp_sensor_state := self.hass.states.get(
+                self._temperature_sensor_entity_id
+            )
+        ) is not None:
+            await self.async_update_temperature_sensor(
+                temp_sensor_state.entity_id, temp_sensor_state
+            )
+
         # Check If we have an old state
         if (old_state := await self.async_get_last_state()) is not None:
             # If we have no initial temperature, restore
@@ -698,20 +709,20 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             != new_state.attributes.get(ATTR_MAX_TEMP)
         ):
             self._min_temp = min(
-                new_state.attributes.get(ATTR_MAX_TEMP, self._min_temp),
+                float(new_state.attributes.get(ATTR_MAX_TEMP, self._min_temp)),
                 max(
                     self._min_temp,
-                    new_state.attributes.get(ATTR_MIN_TEMP, self._min_temp),
+                    float(new_state.attributes.get(ATTR_MIN_TEMP, self._min_temp)),
                 ),
             )
             if self._target_temp_low is not None:
                 self._target_temp_low = max(self._target_temp_low, self._min_temp)
 
             self._max_temp = max(
-                new_state.attributes.get(ATTR_MIN_TEMP, self._max_temp),
+                float(new_state.attributes.get(ATTR_MIN_TEMP, self._max_temp)),
                 min(
                     self._max_temp,
-                    new_state.attributes.get(ATTR_MAX_TEMP, self._max_temp),
+                    float(new_state.attributes.get(ATTR_MAX_TEMP, self._max_temp)),
                 ),
             )
             if self._target_temp_high is not None:
@@ -722,7 +733,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self,
         entity_id: str,
         new_state: State | None,
-        old_state: State | None,
+        old_state: State | None = None,
     ) -> None:
         """Update sensor temperature."""
         if new_state is None:
