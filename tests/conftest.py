@@ -20,3 +20,4 @@ async def auto_setup_homeassistant(hass: HomeAssistant):
     """Automatically load homeassistant component."""
     assert await async_setup_component(hass, "homeassistant", {})
     await hass.async_block_till_done()
+    yield

@@ -181,7 +181,7 @@ class HvacGroupActuator:
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set the HVAC mode on an actuator."""
         await self._async_call_climate_service(
-            SERVICE_SET_HVAC_MODE, {ATTR_HVAC_MODE: hvac_mode}
+            self._entity_id, SERVICE_SET_HVAC_MODE, {ATTR_HVAC_MODE: hvac_mode}
         )
 
     async def async_set_temperature(
@@ -425,9 +425,6 @@ class HvacGroupActuatorDict(dict[str, HvacGroupActuator]):
 class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
     """HVAC group climate entity."""
 
-    _heaters: HvacGroupActuatorDict = HvacGroupActuatorDict()
-    _coolers: HvacGroupActuatorDict = HvacGroupActuatorDict()
-
     _require_actuator_mass_refresh: bool = False
 
     def __init__(
@@ -462,6 +459,9 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
         self._hvac_mode = hvac_mode
         self._attr_hvac_modes = [HVACMode.OFF]
+
+        self._heaters: HvacGroupActuatorDict = HvacGroupActuatorDict()
+        self._coolers: HvacGroupActuatorDict = HvacGroupActuatorDict()
 
         if heaters is None:
             heaters = set()
