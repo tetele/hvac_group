@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from enum import StrEnum
 from typing import Any
+from collections.abc import Callable, Coroutine
 
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
@@ -114,6 +115,12 @@ async def async_setup_entry(
     async_add_entities([entity])
 
 
+async def create_coro(function: Callable, *args, **kwargs) -> Any:
+    """Create a coro wrapper used to patch methods in tests."""
+    LOGGER.debug("Running coroutine %s(%s)", function, args)
+    return await function(*args, **kwargs)
+
+
 class HvacActuatorType(StrEnum):
     """HVAC group actuator type."""
 
@@ -134,6 +141,8 @@ class HvacGroupActuator:
         self._entity_id: str = entity_id
         self.initialized: bool = False
 
+        self._action_to_commit: Coroutine | None = None
+
     @property
     def entity_id(self) -> str:
         """Return the actuator entity_id."""
@@ -143,6 +152,18 @@ class HvacGroupActuator:
     def state(self) -> State:
         """Get the current state of the actuator."""
         return self.hass.states.get(self.entity_id)
+
+    @property
+    def commit_action(self) -> Coroutine | None:
+        """Get the action to commit."""
+        return self._action_to_commit
+
+    def _set_commit_action(self, action: Coroutine):
+        """Set the action to commit."""
+        if self._action_to_commit:
+            LOGGER.debug("Closing commit action on %s", self._entity_id)
+            self._action_to_commit.close()
+        self._action_to_commit = action
 
     def set_context(self, context: Context | None) -> None:
         """Set the context."""
@@ -159,8 +180,18 @@ class HvacGroupActuator:
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set the HVAC mode on an actuator."""
-        await self._async_call_climate_service(
-            self._entity_id, SERVICE_SET_HVAC_MODE, {ATTR_HVAC_MODE: hvac_mode}
+        self._set_commit_action(
+            create_coro(
+                self._async_call_climate_service,
+                self._entity_id,
+                SERVICE_SET_HVAC_MODE,
+                {ATTR_HVAC_MODE: hvac_mode},
+            )
+        )
+        LOGGER.debug(
+            "Creating commit action `set_hvac_mode` on %s %s",
+            self.__class__,
+            self._entity_id,
         )
 
     async def async_set_temperature(
@@ -209,8 +240,18 @@ class HvacGroupActuator:
         if hvac_mode is not None:
             data.update({ATTR_HVAC_MODE: hvac_mode})
 
-        await self._async_call_climate_service(
-            self._entity_id, SERVICE_SET_TEMPERATURE, data
+        self._set_commit_action(
+            create_coro(
+                self._async_call_climate_service,
+                self._entity_id,
+                SERVICE_SET_TEMPERATURE,
+                data,
+            )
+        )
+        LOGGER.debug(
+            "Creating commit action `set_temperature` on %s %s",
+            self.__class__,
+            self._entity_id,
         )
 
     async def _async_call_climate_service(
@@ -254,6 +295,17 @@ class HvacGroupActuator:
             target_temp_low=target_temp_low,
             hvac_mode=HVACMode.OFF,
         )
+
+    async def async_commit(self) -> None:
+        """Execute the last service call."""
+        if self._action_to_commit is not None:
+            await self._action_to_commit
+            LOGGER.debug(
+                "Commit action run for %s %s. Removing", self.__class__, self._entity_id
+            )
+            self._action_to_commit = None
+        else:
+            LOGGER.debug("No commit action for %s %s", self.__class__, self._entity_id)
 
 
 class HvacGroupHeater(HvacGroupActuator):
@@ -380,6 +432,11 @@ class HvacGroupActuatorDict(dict[str, HvacGroupActuator]):
                 target_temp_low=target_temp_low,
                 hvac_mode=hvac_mode,
             )
+
+    async def async_commit(self) -> None:
+        """Commit state changes for all members."""
+        for actuator in self.values():
+            await actuator.async_commit()
 
     def mark_initialized(self) -> None:
         """Set all members as initialized."""
@@ -698,6 +755,10 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             return
 
         await self.async_run_hvac(update_actuators=update_actuators)
+        # Commit changes. Note that common actuators have different HvacGroupActuator
+        # instances, each with their own commit action
+        await self._heaters.async_commit()
+        await self._coolers.async_commit()
         self.async_write_ha_state()
 
     @callback
