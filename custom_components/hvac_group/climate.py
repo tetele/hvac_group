@@ -192,6 +192,15 @@ class HvacGroupActuator:
         hvac_mode: HVACMode | None = None,
     ) -> None:
         """Set the reference temperature of an actuator."""
+        LOGGER.debug(
+            "Attempting to set temperature of %s %s to (%s %s %s) and mode to %s",
+            self.__class__,
+            self._entity_id,
+            temperature,
+            target_temp_low,
+            target_temp_high,
+            hvac_mode,
+        )
         # Prevent receiving both target temperature and target range
         assert None in (temperature, target_temp_high, target_temp_low)
 
@@ -422,6 +431,27 @@ class HvacGroupActuatorDict(dict[str, HvacGroupActuator]):
             actuator.initialized = True
 
 
+def state_diff(new: State, old: State) -> dict[str, Any]:
+    """Compute the difference between 2 states."""
+
+    if old is None:
+        return {"state": new.state, "attributes": new.attributes}
+
+    diff = {"attributes": {}}
+    if new.state != old.state:
+        diff.update({"state": (new.state, old.state)})
+
+    for key, value in new.attributes.items():
+        if (new_attr := old.attributes.get(key)) != value:
+            diff["attributes"].update({key: (value, new_attr)})
+
+    for key in old.attributes:
+        if key not in new.attributes:
+            diff["attributes"].update({key: (None, old.attributes.get(key))})
+
+    return diff
+
+
 class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
     """HVAC group climate entity."""
 
@@ -556,7 +586,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         """Return the supported step of target temperature."""
         if self._temp_target_temperature_step is not None:
             return self._temp_target_temperature_step
-        # if a target_temperature_step is not defined, fallback to equal the precision
+        # If a target_temperature_step is not defined, fallback to equal the precision
         return self.precision
 
     @property
@@ -628,6 +658,14 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             event: EventType[EventStateChangedData],
         ) -> None:
             """Handle actuator updates, like min/max temp changes."""
+
+            LOGGER.debug(
+                "Actutator %s changed state: %s (context %s)",
+                event.data["entity_id"],
+                state_diff(event.data["new_state"], event.data["old_state"]),
+                event.context.id,
+            )
+
             entity_id = event.data["entity_id"]
             self.async_set_context(event.context)
             self.async_update_supported_features(
@@ -728,6 +766,16 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             if self._target_temp_high is not None:
                 self._target_temp_high = min(self._target_temp_high, self._max_temp)
 
+            LOGGER.debug(
+                "New min/max temps received from actuator %s: (%s, %s). HVAC Group %s new min/max temps: %s, %s",
+                entity_id,
+                new_state.attributes.get(ATTR_MIN_TEMP, self._max_temp),
+                new_state.attributes.get(ATTR_MAX_TEMP, self._min_temp),
+                self.entity_id,
+                self._min_temp,
+                self._max_temp,
+            )
+
     @callback
     async def async_update_temperature_sensor(
         self,
@@ -756,6 +804,13 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         if new_temperature == old_temperature:
             return
 
+        LOGGER.debug(
+            "New temperature received from temp sensor %s: %s. Setting on HVAC Group %s",
+            entity_id,
+            new_temperature,
+            self.entity_id,
+        )
+
         self._current_temperature = (
             float(new_temperature) if new_temperature is not None else new_temperature
         )
@@ -768,6 +823,10 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
         # If the update was requested because many actuators are being toggled, don't
         if self._changing_actuators_lock.locked():
+            LOGGER.debug(
+                "Cannot run HVAC %s because the actuators are being mass controlled",
+                self.entity_id,
+            )
             return
 
         async with self._hvac_running_lock:
@@ -806,7 +865,10 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         try:
             if force_update_all:
                 self._require_actuator_mass_refresh = False
-                LOGGER.debug("Force updating the state of actuators")
+                LOGGER.debug(
+                    "Force updating the state of actuators of HVAC group %s",
+                    self.entity_id,
+                )
 
                 await self._changing_actuators_lock.acquire()
 
@@ -828,6 +890,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
                 self._heaters.mark_initialized()
                 self._coolers.mark_initialized()
+
+                LOGGER.debug("Actuators initialized for HVAC group %s", self.entity_id)
 
             needs_cooling = False
             needs_heating = False
@@ -893,16 +957,36 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                     HVACMode.HEAT,
                     HVACMode.HEAT_COOL,
                 ]:
+                    LOGGER.debug(
+                        "Setting common actuators  %s as heaters for HVAC group %s",
+                        ",".join(self.common_actuators.keys()),
+                        self.entity_id,
+                    )
                     await self._async_set_common_actuators_as_heaters()
                 elif force_update_all and self._hvac_mode == HVACMode.HEAT_COOL:
+                    LOGGER.debug(
+                        "Setting common actuators  %s as heaters for HVAC group %s",
+                        ",".join(self.common_actuators.keys()),
+                        self.entity_id,
+                    )
                     await self._async_set_common_actuators_as_heaters()
             elif needs_cooling:
                 if not self._is_cooling and self._hvac_mode in [
                     HVACMode.COOL,
                     HVACMode.HEAT_COOL,
                 ]:
+                    LOGGER.debug(
+                        "Setting common actuators  %s as coolers for HVAC group %s",
+                        ",".join(self.common_actuators.keys()),
+                        self.entity_id,
+                    )
                     await self._async_set_common_actuators_as_coolers()
                 elif force_update_all and self._hvac_mode == HVACMode.HEAT_COOL:
+                    LOGGER.debug(
+                        "Setting common actuators  %s as coolers for HVAC group %s",
+                        ",".join(self.common_actuators.keys()),
+                        self.entity_id,
+                    )
                     await self._async_set_common_actuators_as_coolers()
             else:
                 if (
@@ -912,8 +996,17 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                     (self._is_cooling or update_actuators)
                     and self._toggle_coolers_on_threshold
                 ):
-                    await self.common_actuators.async_turn_off()
+                    LOGGER.debug(
+                        "Turning off common actuators  %s for HVAC group %s",
+                        ",".join(self.common_actuators.keys()),
+                        self.entity_id,
+                    )
                 elif force_update_all and self._hvac_mode == HVACMode.HEAT_COOL:
+                    LOGGER.debug(
+                        "Setting common actuators  %s as heaters for HVAC group %s",
+                        ",".join(self.common_actuators.keys()),
+                        self.entity_id,
+                    )
                     await self._async_set_common_actuators_as_heaters()
 
             self._is_cooling = needs_cooling
@@ -977,6 +1070,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             LOGGER.warning("Unrecognized hvac mode: %s", hvac_mode)
             return
 
+        LOGGER.debug("Setting mode %s on HVAC group %s", hvac_mode, self.entity_id)
+
         self._hvac_mode = hvac_mode
         self._require_actuator_mass_refresh = True
         await self.async_defer_or_update_ha_state(update_actuators=True)
@@ -995,6 +1090,13 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
         if hvac_mode is not None and hvac_mode in self._attr_hvac_modes:
             self._hvac_mode = hvac_mode
+
+        LOGGER.debug(
+            "Setting temperature (%s-%s) on HVAC group %s",
+            temp_low,
+            temp_high,
+            self.entity_id,
+        )
 
         self._require_actuator_mass_refresh = True
         await self.async_defer_or_update_ha_state(update_actuators=True)
