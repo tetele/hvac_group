@@ -124,12 +124,12 @@ class HvacActuatorType(StrEnum):
 class HvacGroupActuator:
     """An actuator (heater/cooler) from a HVAC group."""
 
-    actuator_type: HvacActuatorType | None = None
-    _context: Context | None = None
-
     def __init__(self, hass: HomeAssistant, entity_id: str) -> None:
         """Initialize a HVAC group actuator."""
         self.hass: HomeAssistant = hass
+
+        self.actuator_type: HvacActuatorType | None = None
+        self._context: Context | None = None
 
         self._entity_id: str = entity_id
         self.initialized: bool = False
@@ -425,8 +425,6 @@ class HvacGroupActuatorDict(dict[str, HvacGroupActuator]):
 class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
     """HVAC group climate entity."""
 
-    _require_actuator_mass_refresh: bool = False
-
     def __init__(
         self,
         hass: HomeAssistant,
@@ -489,6 +487,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self._hvac_running_lock = asyncio.Lock()
         self._changing_actuators_lock = asyncio.Lock()
         self._active = False
+
+        self._require_actuator_mass_refresh: bool = False
 
     @property
     def current_temperature(self) -> float | None:
