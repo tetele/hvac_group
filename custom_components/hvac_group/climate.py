@@ -144,27 +144,6 @@ class HvacGroupActuator:
         """Get the current state of the actuator."""
         return self.hass.states.get(self.entity_id)
 
-    @property
-    def as_generic(self) -> HvacGroupActuator:
-        """Turn any subclass into a member of this class."""
-        if isinstance(self, HvacGroupActuator):
-            return self
-        return HvacGroupActuator(self.hass, self._entity_id)
-
-    @property
-    def as_heater(self) -> HvacGroupHeater:
-        """Turn any subclass into a HvacGroupHeater."""
-        if isinstance(self, HvacGroupHeater):
-            return self
-        return HvacGroupHeater(self.hass, self._entity_id)
-
-    @property
-    def as_cooler(self) -> HvacGroupCooler:
-        """Turn any subclass into a HvacGroupCooler."""
-        if isinstance(self, HvacGroupCooler):
-            return self
-        return HvacGroupCooler(self.hass, self._entity_id)
-
     def set_context(self, context: Context | None) -> None:
         """Set the context."""
         self._context = context
@@ -248,13 +227,6 @@ class HvacGroupActuator:
             target={ATTR_ENTITY_ID: self._entity_id},
             context=self._context,
             blocking=True,
-        )
-
-    def supports_ranged_target_temperature(self) -> bool:
-        """Return true if the actuator supports low/high target temperature."""
-        return bool(
-            self.state.attributes.get(ATTR_SUPPORTED_FEATURES)
-            & ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
         )
 
     async def async_turn_on(
@@ -350,22 +322,6 @@ class HvacGroupCooler(HvacGroupActuator):
 
 class HvacGroupActuatorDict(dict[str, HvacGroupActuator]):
     """A special dictionary of actuators."""
-
-    @property
-    def as_heaters(self) -> HvacGroupActuatorDict:
-        """Return a dict of heaters from the current dict."""
-
-        return HvacGroupActuatorDict(
-            {entity_id: actuator.as_heater for entity_id, actuator in self.items()}
-        )
-
-    @property
-    def as_coolers(self) -> HvacGroupActuatorDict:
-        """Return a dict of coolers from the current dict."""
-
-        return HvacGroupActuatorDict(
-            {entity_id: actuator.as_cooler for entity_id, actuator in self.items()}
-        )
 
     async def async_turn_on(
         self,
@@ -592,9 +548,25 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
     @property
     def common_actuators(self) -> HvacGroupActuatorDict:
         """Return a dict of actuators that are both heaters and coolers."""
+        return self.heaters_that_are_also_coolers
+
+    @property
+    def heaters_that_are_also_coolers(self) -> HvacGroupActuatorDict:
+        """Return a dict of heaters that are also coolers."""
         return HvacGroupActuatorDict(
             {
-                entity_id: actuator.as_generic
+                entity_id: actuator
+                for entity_id, actuator in self._heaters.items()
+                if entity_id in self._coolers
+            }
+        )
+
+    @property
+    def coolers_that_are_also_heaters(self) -> HvacGroupActuatorDict:
+        """Return a dict of coolers that are also heaters."""
+        return HvacGroupActuatorDict(
+            {
+                entity_id: actuator
                 for entity_id, actuator in self._coolers.items()
                 if entity_id in self._heaters
             }
@@ -1001,6 +973,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                         ",".join(self.common_actuators.keys()),
                         self.entity_id,
                     )
+                    await self._async_turn_off_common_actuators()
                 elif force_update_all and self._hvac_mode == HVACMode.HEAT_COOL:
                     LOGGER.debug(
                         "Setting common actuators  %s as heaters for HVAC group %s",
@@ -1206,7 +1179,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
     async def _async_set_common_actuators_as_heaters(self) -> None:
         """Set common actuators to work as heaters."""
-        await self.common_actuators.as_heaters.async_set_temperature(
+        await self.heaters_that_are_also_coolers.async_set_temperature(
             temperature=self.target_temperature,
             target_temp_high=self.target_temperature_high,
             target_temp_low=self.target_temperature_low,
@@ -1216,10 +1189,20 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
     async def _async_set_common_actuators_as_coolers(self) -> None:
         """Set common actuators to work as coolers."""
-        await self.common_actuators.as_heaters.async_set_temperature(
+        await self.coolers_that_are_also_heaters.async_set_temperature(
             temperature=self.target_temperature,
             target_temp_high=self.target_temperature_high,
             target_temp_low=self.target_temperature_low,
             hvac_mode=HVACMode.COOL,
+            context=self._context,
+        )
+
+    async def _async_turn_off_common_actuators(self) -> None:
+        """Turn off common actuators."""
+        await self.common_actuators.async_set_temperature(
+            temperature=self.target_temperature,
+            target_temp_high=self.target_temperature_high,
+            target_temp_low=self.target_temperature_low,
+            hvac_mode=HVACMode.OFF,
             context=self._context,
         )
