@@ -1,261 +1,372 @@
 """The tests for the hvac_group climate platform."""
-from unittest.mock import AsyncMock, patch
+
 from typing import Any
-import copy
-
+from unittest.mock import patch
 import pytest
-from homeassistant.components.climate import ClimateEntityFeature, HVACMode
-from homeassistant.const import PRECISION_HALVES, PRECISION_TENTHS
-from homeassistant.core import HomeAssistant, State
-from homeassistant.exceptions import NoEntitySpecifiedError
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import EventStateChangedData
-from homeassistant.helpers.typing import EventType
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.hvac_group import DOMAIN
-from custom_components.hvac_group.climate import (
-    HvacGroupClimateEntity,
-    HvacGroupActuator,
-    HvacGroupCooler,
-    HvacGroupHeater,
-    async_setup_entry,
+from homeassistant.components.climate import (
+    ATTR_CURRENT_TEMPERATURE,
+    ATTR_HVAC_MODE,
+    ATTR_MIN_TEMP,
+    ATTR_MAX_TEMP,
+    ATTR_TARGET_TEMP_LOW,
+    ATTR_TARGET_TEMP_HIGH,
+    ATTR_TEMPERATURE,
+    DOMAIN as CLIMATE_DOMAIN,
+    SERVICE_SET_TEMPERATURE,
+    ClimateEntityFeature,
+    HVACMode,
+)
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import (
+    ATTR_DEVICE_CLASS,
+    ATTR_SUPPORTED_FEATURES,
+    CONF_ENTITY_ID,
+    CONF_NAME,
+    CONF_PLATFORM,
+    DEVICE_CLASS_TEMPERATURE,
+)
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
+from homeassistant.setup import async_setup_component
+
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
 )
 
-# from homeassistant.components.climate import HVACMode
+from custom_components.hvac_group.const import (
+    CONF_HEATERS,
+    CONF_COOLERS,
+    CONF_TOGGLE_COOLERS,
+    CONF_TOGGLE_HEATERS,
+    CONF_CURRENT_TEMPERATURE_ENTITY_ID,
+    DOMAIN,
+)
 
 
-class MockHvacGroupClimateEntity(HvacGroupClimateEntity):
-    """Mock HVAC Group to use in tests."""
+HVAC_GROUP = "climate.hvac_group"
+DEMO_HEATER_SINGLE_TEMP = "climate.heater_single_temp"
+DEMO_HEATER_TEMP_RANGE = "climate.heater_temp_range"
+DEMO_COOLER_SINGLE_TEMP = "climate.cooler_single_temp"
+DEMO_COOLER_TEMP_RANGE = "climate.cooler_temp_range"
+DEMO_COOLER_HEATER = "climate.cooler_heater"
+DEMO_TEMP_SENSOR = "sensor.temperature_sensor"
 
-    @property
-    def supported_features(self) -> int:
-        """Return the list of supported features."""
-        return 0
+DEMO_GENERIC_CLIMATE_ATTRIBUTES = {
+    ATTR_MIN_TEMP: "17",
+    ATTR_MAX_TEMP: "32",
+}
+DEMO_SINGLE_TEMP_CLIMATE_ATTRIBUTES = DEMO_GENERIC_CLIMATE_ATTRIBUTES | {
+    ATTR_TEMPERATURE: "23",
+    ATTR_SUPPORTED_FEATURES: ClimateEntityFeature.TARGET_TEMPERATURE,
+}
+DEMO_TEMP_RANGE_CLIMATE_ATTRIBUTES = DEMO_GENERIC_CLIMATE_ATTRIBUTES | {
+    ATTR_TARGET_TEMP_LOW: "21",
+    ATTR_TARGET_TEMP_HIGH: "23",
+    ATTR_SUPPORTED_FEATURES: ClimateEntityFeature.TARGET_TEMPERATURE_RANGE,
+}
+
+CONFIG_DEFAULT_GROUP = {
+    CONF_PLATFORM: DOMAIN,
+    CONF_NAME: "Test HVAC",
+    CONF_HEATERS: [
+        DEMO_HEATER_SINGLE_TEMP,
+        DEMO_HEATER_TEMP_RANGE,
+        DEMO_COOLER_HEATER,
+    ],
+    CONF_TOGGLE_HEATERS: False,
+    CONF_COOLERS: [
+        DEMO_COOLER_SINGLE_TEMP,
+        DEMO_COOLER_TEMP_RANGE,
+        DEMO_COOLER_HEATER,
+    ],
+    CONF_TOGGLE_COOLERS: False,
+    CONF_CURRENT_TEMPERATURE_ENTITY_ID: DEMO_TEMP_SENSOR,
+}
+
+
+# @pytest.fixture
+# def calls(hass: HomeAssistant) -> list[ServiceCall]:
+#     """Track calls to a mock service."""
+#     return async_mock_service(hass, "climate", "set_temperature")
 
 
 @pytest.fixture
-def initialize_actuators(hass: HomeAssistant) -> None:
-    """Fixture which sets actuators (heaters/coolers)."""
-
-    hass.states.async_set(
-        "climate.heater",
-        "heat",
-        {
-            "min_temp": 11,
-            "max_temp": 28,
-            "temperature": 21,
-            "current_temperature": 21.5,
-            "supported_features": ClimateEntityFeature.TARGET_TEMPERATURE,
-        },
-    )
-    hass.states.async_set(
-        "climate.hvac1",
-        "heat",
-        {
-            "min_temp": 13,
-            "max_temp": 34,
-            "target_temp_low": 20,
-            "target_temp_high": 22,
-            "current_temperature": 21.8,
-            "supported_features": ClimateEntityFeature.TARGET_TEMPERATURE_RANGE,
-        },
-    )
-    hass.states.async_set(
-        "climate.cooler",
-        "cool",
-        {
-            "min_temp": 16,
-            "max_temp": 30,
-            "temperature": 23,
-            "current_temperature": 21.2,
-            "supported_features": ClimateEntityFeature.TARGET_TEMPERATURE,
-        },
-    )
-    hass.states.async_set(
-        "climate.hvac",
-        "cool",
-        {
-            "min_temp": 15,
-            "max_temp": 34,
-            "target_temp_low": 21,
-            "target_temp_high": 23,
-            "current_temperature": 21,
-            "supported_features": ClimateEntityFeature.TARGET_TEMPERATURE_RANGE,
-        },
-    )
-
-
-def _generate_event(
-    hass: HomeAssistant,
-    entity_id: str,
-    state: str | None = None,
-    attributes: dict[str, Any] | None = None,
-) -> EventType[EventStateChangedData]:
-    """Generate an event which symbolizes a state change."""
-
-    old_state = hass.states.get(entity_id) or State(entity_id, "")
-    new_state = copy.copy(old_state)
-
-    if state is not None:
-        new_state.state = state
-
-    if attributes is not None:
-        new_state.attributes = new_state.attributes | attributes
-
-    event = EventType(
-        "EventStateChangedData",
-        {
-            "entity_id": entity_id,
-            "new_state": new_state,
-            "old_state": old_state,
-        },
-    )
-
-    return event
-
-
 @pytest.mark.asyncio
-@pytest.fixture
-async def hvac_group(hass: HomeAssistant) -> HvacGroupClimateEntity:
-    """Fixture which contains a created component."""
-    config = {
-        "temperature_entity_id": "climate.heater",
-        "heaters": ["climate.heater", "climate.hvac1"],
-        "coolers": ["climate.cooler", "climate.hvac"],
-        "toggle_coolers": False,
-        "toggle_heaters": False,
+async def setup_dependencies(hass: HomeAssistant, setup_extras) -> None:
+    """Set up dependencies like climate entities and temp sensor."""
+    if setup_extras is None:
+        setup_extras = {}
+
+    assert await async_setup_component(hass, CLIMATE_DOMAIN, {})
+
+    setup_defaults = {
+        DEMO_COOLER_HEATER: ("off", DEMO_SINGLE_TEMP_CLIMATE_ATTRIBUTES),
+        DEMO_COOLER_SINGLE_TEMP: ("off", DEMO_SINGLE_TEMP_CLIMATE_ATTRIBUTES),
+        DEMO_COOLER_TEMP_RANGE: ("off", DEMO_TEMP_RANGE_CLIMATE_ATTRIBUTES),
+        DEMO_HEATER_SINGLE_TEMP: ("off", DEMO_SINGLE_TEMP_CLIMATE_ATTRIBUTES),
+        DEMO_HEATER_TEMP_RANGE: ("off", DEMO_TEMP_RANGE_CLIMATE_ATTRIBUTES),
+        DEMO_TEMP_SENSOR: ("22.5", {ATTR_DEVICE_CLASS: DEVICE_CLASS_TEMPERATURE}),
     }
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        options=config,
-    )
-    mock_async_add_entities = AsyncMock(AddEntitiesCallback)
 
-    await async_setup_entry(
-        hass, config_entry=entry, async_add_entities=mock_async_add_entities
-    )
-
-    mock_async_add_entities.assert_called()
-
-    hvac_entity: HvacGroupClimateEntity = mock_async_add_entities.call_args.args[0][0]
-
-    return hvac_entity
+    for entity_id, (state, attributes) in setup_defaults.items():
+        if overrides := setup_extras.get(entity_id):
+            state_override, attributes_override = overrides
+            if state_override is not None:
+                state = state_override
+            if attributes_override:
+                attributes.update(attributes_override)
+        hass.states.async_set(entity_id, state, attributes)
+    await hass.async_block_till_done()
 
 
+@pytest.fixture
 @pytest.mark.asyncio
-async def test_entry(hvac_group: HvacGroupClimateEntity, hass: HomeAssistant) -> None:
-    """Test component creation."""
+async def hvac_group_entry(
+    setup_dependencies, hass: HomeAssistant, group_extras
+) -> ConfigEntry:
+    """Set up a group."""
+    if group_extras is None:
+        group_extras = {}
 
-    assert hvac_group._temperature_sensor_entity_id == "climate.heater"
+    entry = MockConfigEntry(
+        title=group_extras.get("title") or "HVAC group 1",
+        domain=DOMAIN,
+        options=CONFIG_DEFAULT_GROUP | group_extras.get("options", {}),
+        unique_id=group_extras.get("unique_id") or "uniq-1",
+    )
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    await hass.async_start()
+    await hass.async_block_till_done()
 
-    assert hvac_group.precision == PRECISION_TENTHS
-    assert hvac_group.target_temperature_step == PRECISION_HALVES
-    assert hvac_group.temperature_unit == hass.config.units.temperature_unit
-    assert HVACMode.OFF in hvac_group.hvac_modes
-    assert HVACMode.HEAT_COOL in hvac_group.hvac_modes
-    assert HVACMode.HEAT not in hvac_group.hvac_modes
-    assert HVACMode.COOL not in hvac_group.hvac_modes
+    data = {}
+    if target_temp_low := group_extras.get(ATTR_TARGET_TEMP_LOW):
+        data[ATTR_TARGET_TEMP_LOW] = target_temp_low
+    if target_temp_high := group_extras.get(ATTR_TARGET_TEMP_HIGH):
+        data[ATTR_TARGET_TEMP_HIGH] = target_temp_high
+    if target_temp := group_extras.get(ATTR_TEMPERATURE):
+        data[ATTR_TEMPERATURE] = target_temp
+    if hvac_mode := group_extras.get(ATTR_HVAC_MODE):
+        data[ATTR_HVAC_MODE] = hvac_mode
+
+    if data:
+        entity_registry = er.async_get(hass)
+        if entity_id := entity_registry.async_get_entity_id(
+            CLIMATE_DOMAIN, DOMAIN, entry.entry_id
+        ):
+            await hass.services.async_call(
+                CLIMATE_DOMAIN,
+                SERVICE_SET_TEMPERATURE,
+                service_data=data,
+                target={CONF_ENTITY_ID: entity_id},
+                blocking=True,
+            )
+
+    return entry
+
+
+@pytest.mark.parametrize(("setup_extras", "group_extras"), [({}, {})])
+@pytest.mark.asyncio
+async def test_setup(
+    hass: HomeAssistant,
+    setup_extras,
+    group_extras,
+    hvac_group_entry,
+) -> None:
+    """Test platform setup."""
+
+    assert hvac_group_entry.state is ConfigEntryState.LOADED
+    hvac_group = hass.states.get("climate.test_hvac")
+    assert hvac_group
+    assert hvac_group.state == HVACMode.OFF
+    assert float(hvac_group.attributes.get(ATTR_MIN_TEMP)) == float(
+        DEMO_GENERIC_CLIMATE_ATTRIBUTES[ATTR_MIN_TEMP]
+    )
+    assert float(hvac_group.attributes.get(ATTR_MAX_TEMP)) == float(
+        DEMO_GENERIC_CLIMATE_ATTRIBUTES[ATTR_MAX_TEMP]
+    )
+    assert float(hvac_group.attributes.get(ATTR_CURRENT_TEMPERATURE)) == 22.5
+
+    with patch(
+        "custom_components.hvac_group.climate.HvacGroupActuator._async_call_climate_service"
+    ) as mock_call_climate_service:
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_SET_TEMPERATURE,
+            {
+                ATTR_TARGET_TEMP_LOW: 21,
+                ATTR_TARGET_TEMP_HIGH: 23,
+                ATTR_HVAC_MODE: HVACMode.HEAT_COOL,
+            },
+            target={CONF_ENTITY_ID: "climate.test_hvac"},
+            blocking=True,
+        )
+
+        assert mock_call_climate_service.call_count == 5
 
 
 @pytest.mark.parametrize(
-    ("temperature", "temp_low", "temp_high", "actuator_class", "expected"),
+    ("setup_extras", "group_extras", "command", "output"),
     [
-        (21, None, None, HvacGroupCooler, 21),
-        (None, 19, 26, HvacGroupCooler, 26),
-        (21, None, None, HvacGroupHeater, 21),
-        (None, 19, 26, HvacGroupHeater, 19),
-        (21, None, None, HvacGroupActuator, 21),
-        (None, 12, 16, HvacGroupActuator, None),
+        # Test 0 - Check temp ranges
+        (
+            {DEMO_TEMP_SENSOR: (22.5, {})},
+            {},  # no initial group setup
+            {
+                ATTR_TARGET_TEMP_LOW: 21,
+                ATTR_TARGET_TEMP_HIGH: 23,
+                ATTR_HVAC_MODE: HVACMode.HEAT_COOL,
+            },
+            {
+                DEMO_COOLER_SINGLE_TEMP: {
+                    ATTR_TEMPERATURE: 23,
+                    ATTR_HVAC_MODE: HVACMode.COOL,
+                },
+                DEMO_COOLER_TEMP_RANGE: {
+                    ATTR_TARGET_TEMP_LOW: 21,
+                    ATTR_TARGET_TEMP_HIGH: 23,
+                    ATTR_HVAC_MODE: HVACMode.COOL,
+                },
+                DEMO_HEATER_SINGLE_TEMP: {
+                    ATTR_TEMPERATURE: 21,
+                    ATTR_HVAC_MODE: HVACMode.HEAT,
+                },
+                DEMO_HEATER_TEMP_RANGE: {
+                    ATTR_TARGET_TEMP_LOW: 21,
+                    ATTR_TARGET_TEMP_HIGH: 23,
+                    ATTR_HVAC_MODE: HVACMode.HEAT,
+                },
+                DEMO_COOLER_HEATER: {
+                    ATTR_TEMPERATURE: 21,
+                    ATTR_HVAC_MODE: HVACMode.HEAT,
+                },
+            },
+        ),
+        # Test 1 - check that common actuators become coolers when temp too high
+        (
+            {DEMO_TEMP_SENSOR: (22.5, {})},
+            {
+                ATTR_TARGET_TEMP_LOW: 21,
+                ATTR_TARGET_TEMP_HIGH: 23,
+                ATTR_HVAC_MODE: HVACMode.HEAT_COOL,
+            },
+            {DEMO_TEMP_SENSOR: (25, {})},  # just update the current temp
+            {
+                DEMO_COOLER_HEATER: {
+                    ATTR_TEMPERATURE: 23,
+                    ATTR_HVAC_MODE: HVACMode.COOL,
+                },
+            },
+        ),
+        # Test 2 - check cooler toggles
+        (
+            {DEMO_TEMP_SENSOR: (22.5, {})},
+            {"options": {CONF_TOGGLE_COOLERS: True, CONF_TOGGLE_HEATERS: True}},
+            {
+                ATTR_TARGET_TEMP_LOW: 21,
+                ATTR_TARGET_TEMP_HIGH: 23,
+                ATTR_HVAC_MODE: HVACMode.HEAT_COOL,
+            },
+            {
+                DEMO_COOLER_SINGLE_TEMP: {
+                    ATTR_HVAC_MODE: HVACMode.OFF,
+                },
+                DEMO_COOLER_TEMP_RANGE: {
+                    ATTR_HVAC_MODE: HVACMode.OFF,
+                },
+                DEMO_HEATER_SINGLE_TEMP: {
+                    ATTR_HVAC_MODE: HVACMode.OFF,
+                },
+                DEMO_HEATER_TEMP_RANGE: {
+                    ATTR_HVAC_MODE: HVACMode.OFF,
+                },
+                DEMO_COOLER_HEATER: {
+                    ATTR_HVAC_MODE: HVACMode.OFF,
+                },
+            },
+        ),
+        # Test 3 - check cooler toggles, coolers active
+        (
+            {DEMO_TEMP_SENSOR: (27, {})},
+            {"options": {CONF_TOGGLE_COOLERS: True, CONF_TOGGLE_HEATERS: True}},
+            {
+                ATTR_TARGET_TEMP_LOW: 21,
+                ATTR_TARGET_TEMP_HIGH: 23,
+                ATTR_HVAC_MODE: HVACMode.HEAT_COOL,
+            },
+            {
+                DEMO_COOLER_SINGLE_TEMP: {
+                    ATTR_HVAC_MODE: HVACMode.COOL,
+                },
+                DEMO_COOLER_TEMP_RANGE: {
+                    ATTR_HVAC_MODE: HVACMode.COOL,
+                },
+                DEMO_HEATER_SINGLE_TEMP: {
+                    ATTR_HVAC_MODE: HVACMode.OFF,
+                },
+                DEMO_HEATER_TEMP_RANGE: {
+                    ATTR_HVAC_MODE: HVACMode.OFF,
+                },
+                DEMO_COOLER_HEATER: {
+                    ATTR_HVAC_MODE: HVACMode.COOL,
+                },
+            },
+        ),
     ],
 )
-def test_guess_temperature(
-    hass: HomeAssistant, temperature, temp_high, temp_low, actuator_class, expected
-) -> None:
-    """Test temperature guessing."""
-    actuator = actuator_class(hass, "test.id")
-    assert (
-        actuator._guess_target_temperature(
-            temperature=temperature,
-            target_temp_low=temp_low,
-            target_temp_high=temp_high,
-        )
-        == expected
-    )
-
-
 @pytest.mark.asyncio
-async def test_control_hvac(
-    initialize_actuators, hvac_group: HvacGroupClimateEntity, hass: HomeAssistant
+async def test_call_forwarding(
+    hass: HomeAssistant,
+    setup_extras,
+    group_extras,
+    command,
+    output,
+    hvac_group_entry: ConfigEntry,
 ) -> None:
-    """Test control HVAC."""
+    """Test whether the actuators get a correct service call."""
 
-    with patch.object(hvac_group, "_async_turn_device") as hvac_turn_device:
-        try:
-            await hvac_group._async_control_hvac()
-        except NoEntitySpecifiedError:
-            assert not hvac_turn_device.called
-        else:
-            pass
+    hvac_group_entity_id = er.async_get(hass).async_get_entity_id(
+        CLIMATE_DOMAIN, DOMAIN, hvac_group_entry.entry_id
+    )
+    assert hvac_group_entity_id
 
-    with patch.object(hvac_group, "_async_turn_device") as hvac_turn_device, patch(
-        "homeassistant.core.ServiceRegistry.async_call"
-    ) as hass_service_call:
-        try:
-            await hvac_group.async_set_hvac_mode(HVACMode.HEAT_COOL)
-        except NoEntitySpecifiedError:
-            assert len(hvac_turn_device.mock_calls) == 4
-            for call in hass_service_call.mock_calls:
-                match call.kwargs["target"]["entity_id"]:
-                    case "climate.cooler":
-                        assert call.args[2] == {
-                            "temperature": hvac_group.target_temperature_high
-                        }
-                    case "climate.heater":
-                        assert call.args[2] == {
-                            "temperature": hvac_group.target_temperature_low
-                        }
-                    case "climate.hvac":
-                        assert call.args[2] == {
-                            "target_temp_high": hvac_group.target_temperature_high,
-                            "target_temp_low": hvac_group.target_temperature_low,
-                        }
-                    case "climate.hvac1":
-                        assert call.args[2] == {
-                            "target_temp_high": hvac_group.target_temperature_high,
-                            "target_temp_low": hvac_group.target_temperature_low,
-                        }
+    with patch(
+        "custom_components.hvac_group.climate.HvacGroupActuator._async_call_climate_service"
+    ) as mock_call_climate_service:
+        # command_args is a dict with keys representing actuators or the temp sensor
+        service_call_data = {}
+        if command.get(ATTR_TARGET_TEMP_LOW):
+            service_call_data[ATTR_TARGET_TEMP_LOW] = command[ATTR_TARGET_TEMP_LOW]
+        if command.get(ATTR_TARGET_TEMP_HIGH):
+            service_call_data[ATTR_TARGET_TEMP_HIGH] = command[ATTR_TARGET_TEMP_HIGH]
+        if command.get(ATTR_HVAC_MODE):
+            service_call_data[ATTR_HVAC_MODE] = command[ATTR_HVAC_MODE]
 
-        else:
-            pass
-
-    with patch("homeassistant.core.ServiceRegistry.async_call") as hass_service_call:
-        try:
-            await hvac_group.async_set_temperature(
-                target_temp_low=23, target_temp_high=25
+        # Send the command if any required args are present
+        if service_call_data:
+            await hass.services.async_call(
+                CLIMATE_DOMAIN,
+                SERVICE_SET_TEMPERATURE,
+                service_call_data,
+                target={CONF_ENTITY_ID: hvac_group_entity_id},
+                blocking=True,
             )
-        except NoEntitySpecifiedError:
-            assert hvac_group.target_temperature_low == 23
-            assert hvac_group.target_temperature_high == 25
-            for call in hass_service_call.mock_calls:
-                match call.kwargs["target"]["entity_id"]:
-                    case "climate.cooler":
-                        assert call.args[2] == {
-                            "temperature": hvac_group.target_temperature_high
-                        }
-                    case "climate.heater":
-                        assert call.args[2] == {
-                            "temperature": hvac_group.target_temperature_low
-                        }
-                    case "climate.hvac":
-                        assert call.args[2] == {
-                            "target_temp_high": hvac_group.target_temperature_high,
-                            "target_temp_low": hvac_group.target_temperature_low,
-                        }
-                    case "climate.hvac1":
-                        assert call.args[2] == {
-                            "target_temp_high": hvac_group.target_temperature_high,
-                            "target_temp_low": hvac_group.target_temperature_low,
-                        }
-        else:
-            pass
+
+        # Update temp sensor if required. Data is a tuple (state, attributes)
+        if temp_sensor_update := command.get(DEMO_TEMP_SENSOR):
+            hass.states.async_set(
+                DEMO_TEMP_SENSOR, temp_sensor_update[0], temp_sensor_update[1]
+            )
+        await hass.async_block_till_done()
+
+        assert mock_call_climate_service.called
+
+        # Check if calls to climate.set_temperature include the expected args
+        for call in mock_call_climate_service.call_args_list:
+            expected_args: dict[str, Any] = output.get(call.args[0], {})
+            assert expected_args.items() <= call.args[2].items(), (
+                f"{call.args[0]} expected a call with {expected_args}, "
+                "actual value was {call.args[2]}"
+            )
