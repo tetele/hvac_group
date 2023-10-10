@@ -1,8 +1,8 @@
 """The tests for the hvac_group climate platform."""
 
-import pytest
 from typing import Any
 from unittest.mock import patch
+import pytest
 
 from homeassistant.components.climate import (
     ATTR_CURRENT_TEMPERATURE,
@@ -366,6 +366,7 @@ async def test_call_forwarding(
         # Check if calls to climate.set_temperature include the expected args
         for call in mock_call_climate_service.call_args_list:
             expected_args: dict[str, Any] = output.get(call.args[0], {})
-            assert (
-                expected_args.items() <= call.args[2].items()
-            ), f"{call.args[0]} expected a call with {expected_args}, actual value was {call.args[2]}"
+            assert expected_args.items() <= call.args[2].items(), (
+                f"{call.args[0]} expected a call with {expected_args}, "
+                "actual value was {call.args[2]}"
+            )

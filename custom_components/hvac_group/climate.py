@@ -450,7 +450,7 @@ def state_diff(new: State, old: State) -> dict[str, Any]:
     if old is None:
         return {"state": new.state, "attributes": new.attributes}
 
-    diff = {"attributes": {}}
+    diff: dict[str, Any] = {"attributes": {}}
     if new.state != old.state:
         diff.update({"state": (new.state, old.state)})
 
@@ -679,7 +679,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             )
 
         # Set default state to off
-        if self._hvac_mode is None:  # TODO is none
+        if self._hvac_mode is None:
             self._hvac_mode = HVACMode.OFF
 
         @callback
@@ -800,7 +800,10 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 self._target_temp_high = min(self._target_temp_high, self._max_temp)
 
             LOGGER.debug(
-                "New min/max temps received from actuator %s: (%s, %s). HVAC Group %s new min/max temps: %s, %s",
+                (
+                    "New min/max temps received from actuator %s: (%s, %s). "
+                    "HVAC Group %s new min/max temps: %s, %s"
+                ),
                 entity_id,
                 new_state.attributes.get(ATTR_MIN_TEMP, self._max_temp),
                 new_state.attributes.get(ATTR_MAX_TEMP, self._min_temp),
