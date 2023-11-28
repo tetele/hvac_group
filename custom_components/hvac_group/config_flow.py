@@ -6,6 +6,10 @@ from typing import Any, cast
 import voluptuous as vol
 
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN
+from homeassistant.components.sensor import (
+    DOMAIN as SENSOR_DOMAIN,
+    DEVICE_CLASS_TEMPERATURE,
+)
 from homeassistant.const import CONF_NAME
 from homeassistant.core import callback, HomeAssistant
 from homeassistant.helpers import entity_registry as er, selector
@@ -35,7 +39,14 @@ OPTIONS_SCHEMA = {
     ),
     vol.Optional(CONF_TOGGLE_COOLERS): selector.BooleanSelector(),
     vol.Required(CONF_CURRENT_TEMPERATURE_ENTITY_ID): selector.EntitySelector(
-        selector.EntityFilterSelectorConfig(domain=CLIMATE_DOMAIN)
+        selector.EntitySelectorConfig(
+            filter=[
+                selector.EntityFilterSelectorConfig(
+                    domain=SENSOR_DOMAIN, device_class=DEVICE_CLASS_TEMPERATURE
+                ),
+                selector.EntityFilterSelectorConfig(domain=CLIMATE_DOMAIN),
+            ]
+        )
     ),
     vol.Required(CONF_HIDE_MEMBERS, default=False): selector.BooleanSelector(),
 }
