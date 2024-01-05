@@ -652,11 +652,15 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         for entity_id, heater in self._heaters.items():
             if heater.state is None:
                 continue
-            self.async_update_supported_features(entity_id, heater.state)
+            self.async_update_supported_features(
+                entity_id, HvacActuatorType.HEATER, heater.state
+            )
         for entity_id, cooler in self._coolers.items():
             if cooler.state is None:
                 continue
-            self.async_update_supported_features(entity_id, cooler.state)
+            self.async_update_supported_features(
+                entity_id, HvacActuatorType.COOLER, cooler.state
+            )
 
         if (
             temp_sensor_state := self.hass.states.get(
@@ -714,18 +718,29 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
             entity_id = event.data["entity_id"]
             self.async_set_context(event.context)
-            self.async_update_supported_features(
-                entity_id,
-                event.data["new_state"],
-                event.data["old_state"],
-            )
 
-            if (
-                entity_id in self._heaters and not self._heaters[entity_id].initialized
-            ) or (
-                entity_id in self._coolers and not self._coolers[entity_id].initialized
-            ):
-                self._require_actuator_mass_refresh = True
+            if entity_id in self._heaters:
+                self.async_update_supported_features(
+                    entity_id,
+                    HvacActuatorType.HEATER,
+                    event.data["new_state"],
+                    event.data["old_state"],
+                )
+
+                if not self._heaters[entity_id].initialized:
+                    self._require_actuator_mass_refresh = True
+                await self.async_defer_or_update_ha_state()
+
+            if entity_id in self._coolers:
+                self.async_update_supported_features(
+                    entity_id,
+                    HvacActuatorType.COOLER,
+                    event.data["new_state"],
+                    event.data["old_state"],
+                )
+
+                if not self._coolers[entity_id].initialized:
+                    self._require_actuator_mass_refresh = True
                 await self.async_defer_or_update_ha_state()
 
         @callback
@@ -782,6 +797,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
     def async_update_supported_features(
         self,
         entity_id: str,
+        actuator_type: HvacActuatorType,
         new_state: State | None,
         old_state: State | None = None,
     ) -> None:
@@ -828,6 +844,9 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 self._min_temp,
                 self._max_temp,
             )
+
+        if old_state is None:
+            self._update_hvac_modes(actuator_type, new_state)
 
     @callback
     async def async_update_temperature_sensor(
@@ -1074,6 +1093,40 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             if self._changing_actuators_lock.locked():
                 self._changing_actuators_lock.release()
 
+    def _update_hvac_modes(self, actuator_type: HvacActuatorType, state: State) -> None:
+        """Update the HVAC modes available for the group when a new actuator is loaded."""
+
+        required_mode = (
+            HVACMode.HEAT if actuator_type == HvacActuatorType.HEATER else HVACMode.COOL
+        )
+        opposite_mode = (
+            HVACMode.COOL if actuator_type == HvacActuatorType.HEATER else HVACMode.HEAT
+        )
+        if not (
+            required_mode in self._attr_hvac_modes
+            or HVACMode.HEAT_COOL in self._attr_hvac_modes
+        ):
+            if opposite_mode in self._attr_hvac_modes:
+                self._attr_hvac_modes.remove(opposite_mode)
+                self._attr_hvac_modes.append(HVACMode.HEAT_COOL)
+                self._attr_supported_features = (
+                    ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+                )
+            else:
+                self._attr_hvac_modes.append(required_mode)
+
+        if (
+            ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+            in state.attributes[ATTR_SUPPORTED_FEATURES]
+            or ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+            in self._attr_supported_features
+        ):
+            self._attr_supported_features = (
+                ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+            )
+        else:
+            self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+
     def _add_heater(self, heater_entity_id: str) -> None:
         """Add a heater actuator referenced by entity_id."""
         if heater_entity_id in self._heaters:
@@ -1082,19 +1135,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         heater = HvacGroupHeater(self.hass, heater_entity_id)
         self._heaters.update({heater_entity_id: heater})
 
-        if not (
-            HVACMode.HEAT in self._attr_hvac_modes
-            or HVACMode.HEAT_COOL in self._attr_hvac_modes
-        ):
-            if HVACMode.COOL in self._attr_hvac_modes:
-                self._attr_hvac_modes.remove(HVACMode.COOL)
-                self._attr_hvac_modes.append(HVACMode.HEAT_COOL)
-                self._attr_supported_features = (
-                    ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-                )
-            else:
-                self._attr_hvac_modes.append(HVACMode.HEAT)
-                self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+        if heater.state:
+            self._update_hvac_modes(HvacActuatorType.HEATER, heater.state)
 
     def _add_cooler(self, cooler_entity_id: str) -> None:
         """Add a heater actuator referenced by entity_id."""
@@ -1104,19 +1146,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         cooler = HvacGroupCooler(self.hass, cooler_entity_id)
         self._coolers.update({cooler_entity_id: cooler})
 
-        if not (
-            HVACMode.COOL in self._attr_hvac_modes
-            or HVACMode.HEAT_COOL in self._attr_hvac_modes
-        ):
-            if HVACMode.HEAT in self._attr_hvac_modes:
-                self._attr_hvac_modes.remove(HVACMode.HEAT)
-                self._attr_hvac_modes.append(HVACMode.HEAT_COOL)
-                self._attr_supported_features = (
-                    ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-                )
-            else:
-                self._attr_hvac_modes.append(HVACMode.COOL)
-                self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+        if cooler.state:
+            self._update_hvac_modes(HvacActuatorType.HEATER, cooler.state)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set hvac mode callback."""
