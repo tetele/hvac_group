@@ -523,6 +523,10 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self._max_temp = max_temp or DEFAULT_MAX_TEMP
         self._target_temp_low = target_temp_low
         self._target_temp_high = target_temp_high
+        if len(self._heaters) == 0:
+            self._temperature = target_temp_high
+        if len(self._coolers) == 0:
+            self._temperature = target_temp_low
 
         self._toggle_heaters_on_threshold = toggle_heaters if self._heaters else False
         self._toggle_coolers_on_threshold = toggle_coolers if self._coolers else False
@@ -585,6 +589,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         """Return the low temperature we try to reach."""
         if self._target_temp_low is not None:
             return self._target_temp_low
+        if self._temperature is not None:
+            return self._temperature
         return self.min_temp
 
     @property
@@ -592,7 +598,18 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         """Return the high temperature we try to reach."""
         if self._target_temp_high is not None:
             return self._target_temp_high
+        if self._temperature is not None:
+            return self._temperature
         return self.max_temp
+
+    @property
+    def temperature(self) -> float:
+        """Return the target temperature we try to reach."""
+        if self._temperature is not None:
+            return self._temperature
+        if self._coolers:
+            return self.max_temp
+        return self.min_temp
 
     @property
     def target_temperature_step(self) -> float:
@@ -933,12 +950,17 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             needs_heating = False
 
             # Assertions are just for shutting up mypy
-            assert self._target_temp_low
-            assert self._target_temp_high
+            assert (
+                self._target_temp_low and self._target_temp_high
+            ) or self._temperature
             assert self._current_temperature
 
-            too_cold = self._target_temp_low >= self._current_temperature
-            too_hot = self._current_temperature >= self._target_temp_high
+            too_cold = (
+                self._target_temp_low or self._temperature
+            ) >= self._current_temperature
+            too_hot = self._current_temperature >= (
+                self._target_temp_high or self._temperature
+            )
             if too_hot and self._coolers:
                 needs_cooling = True
                 if (
@@ -1117,6 +1139,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         """Set new target temperatures."""
         temp_low = kwargs.get(ATTR_TARGET_TEMP_LOW)
         temp_high = kwargs.get(ATTR_TARGET_TEMP_HIGH)
+        temp = kwargs.get(ATTR_TEMPERATURE)
         hvac_mode = kwargs.get(ATTR_HVAC_MODE)
 
         if temp_low is not None:
@@ -1125,13 +1148,18 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         if temp_high is not None:
             self._target_temp_high = temp_high
 
+        if temp is not None:
+            self._temperature = temp
+
         if hvac_mode is not None and hvac_mode in self._attr_hvac_modes:
             self._hvac_mode = hvac_mode
 
         LOGGER.debug(
-            "Setting temperature (%s-%s) on HVAC group %s",
-            temp_low,
-            temp_high,
+            "Setting temperature (%s) on HVAC group %s",
+            f"{temp_low}-{temp_high}"
+            if ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+            in self._attr_supported_features
+            else f"{temp}",
             self.entity_id,
         )
 
