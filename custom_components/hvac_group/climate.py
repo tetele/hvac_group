@@ -1120,13 +1120,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set hvac mode callback."""
-        if hvac_mode not in (
-            HVACMode.OFF,
-            HVACMode.HEAT,
-            HVACMode.COOL,
-            HVACMode.HEAT_COOL,
-        ):
-            LOGGER.warning("Unrecognized hvac mode: %s", hvac_mode)
+        if hvac_mode not in self._attr_hvac_modes:
+            LOGGER.warning("Unsupported hvac mode: %s", hvac_mode)
             return
 
         LOGGER.debug("Setting mode %s on HVAC group %s", hvac_mode, self.entity_id)
