@@ -106,8 +106,8 @@ async def async_setup_entry(
         max_temp,
         precision=precision,
         target_temperature_step=target_temperature_step,
-        heaters=hvac_actuator_entity_ids[CONF_HEATERS],
-        coolers=hvac_actuator_entity_ids[CONF_COOLERS],
+        heaters=hvac_actuator_entity_ids.get(CONF_HEATERS, set()),
+        coolers=hvac_actuator_entity_ids.get(CONF_COOLERS, set()),
         toggle_coolers=toggle_coolers,
         toggle_heaters=toggle_heaters,
     )
