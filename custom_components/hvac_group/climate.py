@@ -140,6 +140,7 @@ class HvacGroupActuator:
 
         self._entity_id: str = entity_id
         self.initialized: bool = False
+        self.loaded: bool = False
 
         self._action_to_commit: Coroutine | None = None
 
@@ -536,6 +537,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self._active = False
 
         self._require_actuator_mass_refresh: bool = False
+        self._state_restored = False
 
     @property
     def current_temperature(self) -> float | None:
@@ -646,7 +648,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             }
         )
 
-    async def async_added_to_hass(self) -> None:
+    async def async_added_to_hass(self) -> None:  # noqa: C901
         """Register listeners."""
 
         for entity_id, heater in self._heaters.items():
@@ -671,37 +673,73 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 temp_sensor_state.entity_id, temp_sensor_state
             )
 
-        # Check If we have an old state
-        if (old_state := await self.async_get_last_state()) is not None:
-            # If we have no initial temperature, restore
-            target_temp_low = self._target_temp_low or old_state.attributes.get(
-                ATTR_TARGET_TEMP_LOW, self.min_temp
-            )
-            target_temp_high = self._target_temp_high or old_state.attributes.get(
-                ATTR_TARGET_TEMP_HIGH, self.max_temp
-            )
-            await self.async_set_temperature(
-                target_temp_low=target_temp_low, target_temp_high=target_temp_high
-            )
+        async def async_apply_last_state_when_actuators_loaded() -> None:
+            """Apply saved state when group members are loaded.
 
-            if self._hvac_mode is None and old_state.state:
-                await self.async_set_hvac_mode(old_state.state)
+            Check whether all members have been initiatlized
+            and apply the last saved state if they were.
+            The reason for waiting is so that all the features are loaded.
+            """
 
-        else:
-            # No previous state, try and restore defaults
-            if self._target_temp_low is None:
-                self._target_temp_low = self.min_temp
-            if self._target_temp_high is None:
-                self._target_temp_high = self.max_temp
-            LOGGER.warning(
-                "No previously saved temperature, setting to %s, %s",
-                self._target_temp_low,
-                self._target_temp_high,
-            )
+            if self._state_restored:
+                return
 
-        # Set default state to off
-        if self._hvac_mode is None:
-            self._hvac_mode = HVACMode.OFF
+            for heater in self._heaters.values():
+                if not heater.loaded:
+                    return
+            for cooler in self._coolers.values():
+                if not cooler.loaded:
+                    return
+
+            # Check If we have an old state
+            if (old_state := await self.async_get_last_state()) is not None:
+                # If we have no initial temperature, restore
+                if (
+                    ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+                    in self._attr_supported_features
+                ):
+                    target_temp_low = self._target_temp_low or old_state.attributes.get(
+                        ATTR_TARGET_TEMP_LOW, self.min_temp
+                    )
+                    target_temp_high = (
+                        self._target_temp_high
+                        or old_state.attributes.get(
+                            ATTR_TARGET_TEMP_HIGH, self.max_temp
+                        )
+                    )
+                    await self.async_set_temperature(
+                        target_temp_low=target_temp_low,
+                        target_temp_high=target_temp_high,
+                    )
+                else:
+                    default_temp = self.max_temp if self._coolers else self.min_temp
+                    target_temp = self._temperature or old_state.attributes.get(
+                        ATTR_TEMPERATURE, default_temp
+                    )
+                    await self.async_set_temperature(temperature=target_temp)
+
+                if self._hvac_mode is None and old_state.state:
+                    await self.async_set_hvac_mode(old_state.state)
+
+            else:
+                # No previous state, try and restore defaults
+                if self._target_temp_low is None:
+                    self._target_temp_low = self.min_temp
+                if self._target_temp_high is None:
+                    self._target_temp_high = self.max_temp
+                LOGGER.warning(
+                    "No previously saved temperature, setting to %s, %s",
+                    self._target_temp_low,
+                    self._target_temp_high,
+                )
+
+            # Set default state to off
+            if self._hvac_mode is None:
+                self._hvac_mode = HVACMode.OFF
+
+            self._state_restored = True
+
+        await async_apply_last_state_when_actuators_loaded()
 
         @callback
         async def async_actuator_state_changed_listener(
@@ -729,6 +767,10 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
                 if not self._heaters[entity_id].initialized:
                     self._require_actuator_mass_refresh = True
+
+                if not self._heaters[entity_id].loaded:
+                    self._heaters[entity_id].loaded = True
+
                 await self.async_defer_or_update_ha_state()
 
             if entity_id in self._coolers:
@@ -741,7 +783,13 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
                 if not self._coolers[entity_id].initialized:
                     self._require_actuator_mass_refresh = True
+
+                if not self._coolers[entity_id].loaded:
+                    self._coolers[entity_id].loaded = True
+
                 await self.async_defer_or_update_ha_state()
+
+            await async_apply_last_state_when_actuators_loaded()
 
         @callback
         async def async_sensor_state_changed_listener(
