@@ -524,8 +524,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self._target_temp_low = target_temp_low
         self._target_temp_high = target_temp_high
 
-        self._toggle_heaters_on_threshold = toggle_heaters
-        self._toggle_coolers_on_threshold = toggle_coolers
+        self._toggle_heaters_on_threshold = toggle_heaters if self._heaters else False
+        self._toggle_coolers_on_threshold = toggle_coolers if self._coolers else False
 
         self._hvac_running_lock = asyncio.Lock()
         self._changing_actuators_lock = asyncio.Lock()
@@ -939,7 +939,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
             too_cold = self._target_temp_low >= self._current_temperature
             too_hot = self._current_temperature >= self._target_temp_high
-            if too_hot:
+            if too_hot and self._coolers:
                 needs_cooling = True
                 if (
                     (not self._are_coolers_active or update_actuators)
@@ -962,7 +962,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 )
                 await self._async_turn_off_coolers(pure=True)
 
-            if too_cold:
+            if too_cold and self._heaters:
                 needs_heating = True
                 if (
                     (not self._are_heaters_active or update_actuators)
@@ -1140,6 +1140,9 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
     async def _async_turn_on_coolers(self, pure: bool = False) -> None:
         """Turn on coolers. If `pure` is `True`, it only affects coolers which are not also heaters."""
+        if not self._coolers:
+            return
+
         self._are_coolers_active = True
         targets: HvacGroupActuatorDict = (
             HvacGroupActuatorDict(
@@ -1161,6 +1164,9 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
     async def _async_turn_off_coolers(self, pure: bool = False) -> None:
         """Turn off coolers. If `pure` is `True`, it only affects coolers which are not also heaters."""
+        if not self._coolers:
+            return
+
         self._are_coolers_active = False
         targets: HvacGroupActuatorDict = (
             HvacGroupActuatorDict(
@@ -1182,6 +1188,9 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
     async def _async_turn_on_heaters(self, pure: bool = False) -> None:
         """Turn on heaters. If `pure` is `True`, it only affects heaters which are not also coolers."""
+        if not self._heaters:
+            return
+
         self._are_heaters_active = True
         targets: HvacGroupActuatorDict = (
             HvacGroupActuatorDict(
@@ -1203,6 +1212,9 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
     async def _async_turn_off_heaters(self, pure: bool = False) -> None:
         """Turn off heaters. If `pure` is `True`, it only affects heaters which are not also coolers."""
+        if not self._heaters:
+            return
+
         self._are_heaters_active = False
         targets: HvacGroupActuatorDict = (
             HvacGroupActuatorDict(
