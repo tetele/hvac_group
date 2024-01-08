@@ -8,7 +8,7 @@ import voluptuous as vol
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN
 from homeassistant.components.sensor import (
     DOMAIN as SENSOR_DOMAIN,
-    DEVICE_CLASS_TEMPERATURE,
+    SensorDeviceClass,
 )
 from homeassistant.const import CONF_NAME
 from homeassistant.core import callback, HomeAssistant
@@ -42,7 +42,7 @@ OPTIONS_SCHEMA = {
         selector.EntitySelectorConfig(
             filter=[
                 selector.EntityFilterSelectorConfig(
-                    domain=SENSOR_DOMAIN, device_class=DEVICE_CLASS_TEMPERATURE
+                    domain=SENSOR_DOMAIN, device_class=SensorDeviceClass.TEMPERATURE
                 ),
                 selector.EntityFilterSelectorConfig(domain=CLIMATE_DOMAIN),
             ]

@@ -17,6 +17,7 @@ from homeassistant.components.climate import (
     ClimateEntityFeature,
     HVACMode,
 )
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import (
     ATTR_DEVICE_CLASS,
@@ -24,7 +25,6 @@ from homeassistant.const import (
     CONF_ENTITY_ID,
     CONF_NAME,
     CONF_PLATFORM,
-    DEVICE_CLASS_TEMPERATURE,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -106,7 +106,7 @@ async def setup_dependencies(hass: HomeAssistant, setup_extras) -> None:
         DEMO_COOLER_TEMP_RANGE: ("off", DEMO_TEMP_RANGE_CLIMATE_ATTRIBUTES),
         DEMO_HEATER_SINGLE_TEMP: ("off", DEMO_SINGLE_TEMP_CLIMATE_ATTRIBUTES),
         DEMO_HEATER_TEMP_RANGE: ("off", DEMO_TEMP_RANGE_CLIMATE_ATTRIBUTES),
-        DEMO_TEMP_SENSOR: ("22.5", {ATTR_DEVICE_CLASS: DEVICE_CLASS_TEMPERATURE}),
+        DEMO_TEMP_SENSOR: ("22.5", {ATTR_DEVICE_CLASS: SensorDeviceClass.TEMPERATURE}),
     }
 
     for entity_id, (state, attributes) in setup_defaults.items():

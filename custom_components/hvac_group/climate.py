@@ -223,9 +223,8 @@ class HvacGroupActuator:
             return
 
         data = {}
-        if (
-            self.state.attributes.get(ATTR_SUPPORTED_FEATURES, 0)
-            & ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+        if ClimateEntityFeature.TARGET_TEMPERATURE_RANGE in self.state.attributes.get(
+            ATTR_SUPPORTED_FEATURES, 0
         ):
             data = {
                 ATTR_TARGET_TEMP_LOW: target_temp_low or temperature,
