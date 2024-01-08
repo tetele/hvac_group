@@ -6,13 +6,13 @@
 
 [![hacs][hacsbadge]][hacs]
 ![Project Maintenance][maintenance-shield]
-[![BuyMeCoffee][buymecoffeebadge]][buymecoffee]
+[![SponsorMe][sponsormebadge]][sponsorme]
 
 <!-- [![Discord][discord-shield]][discord] -->
 
 [![Community Forum][forum-shield]][forum]
 
-_Create a custom thermostat to control multiple other climate components._
+_Create a custom thermostat to control multiple other climate components. Useful for controlling an AC unit and a heating unit in a single room._
 
 **This integration will set up the following platforms.**
 
@@ -21,6 +21,13 @@ _Create a custom thermostat to control multiple other climate components._
 | `climate` | The replacement thermostat which can control other nested thermostats. |
 
 ## Installation
+
+### HACS
+
+1. If you're using HACS, go to "HACS" > "Integrations" and add `https://github.com/tetele/hvac_group` as a [custom repository](https://hacs.xyz/docs/faq/custom_repositories/) under the "Integration" category
+1. In the HA UI go to "Settings" -> "Devices & services" -> "Helpers" click "+" and search for "HVAC group"
+
+### Standalone
 
 1. Using the tool of choice open the directory (folder) for your HA configuration (where you find `configuration.yaml`).
 1. If you do not have a `custom_components` directory (folder) there, you need to create it.
@@ -37,7 +44,7 @@ _Create a custom thermostat to control multiple other climate components._
 1. Select one or more heating entities (e.g. the radiators and the electric heater in the bedroom)
 1. Select one or more cooling entities (e.g. the air conditioning in the bedroom)
 1. For both heaters and coolers, if you check `Toggle heaters/coolers on or off [...]`, they will physically be turned off if the desired temperature is reached
-1. Select a climate entity which holds the current temperature (`Temperature sensor`)
+1. Select a climate entity or a temperature sensor which holds the current temperature (`Temperature sensor`)
 1. If you check `Hide members`, creating the group will mark heater and cooler entities as hidden
 1. Click `Submit`
 
@@ -50,6 +57,8 @@ If you want to contribute to this please read the [Contribution guidelines](CONT
 [hvac_group]: https://github.com/tetele/hvac_group
 [buymecoffee]: https://www.buymeacoffee.com/t3t3l3
 [buymecoffeebadge]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg?style=for-the-badge
+[sponsorme]: https://github.com/sponsors/tetele/
+[sponsormebadge]: https://img.shields.io/badge/sponsor%20me-donate-yellow.svg?style=for-the-badge
 [commits-shield]: https://img.shields.io/github/commit-activity/y/tetele/hvac_group.svg?style=for-the-badge
 [commits]: https://github.com/tetele/hvac_group/commits/main
 [hacs]: https://github.com/hacs/integration
