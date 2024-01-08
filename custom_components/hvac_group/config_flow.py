@@ -30,11 +30,11 @@ from .const import (
 )
 
 OPTIONS_SCHEMA = {
-    vol.Optional(CONF_HEATERS): selector.EntitySelector(
+    vol.Optional(CONF_HEATERS, default=set()): selector.EntitySelector(
         selector.EntitySelectorConfig(domain=CLIMATE_DOMAIN, multiple=True),
     ),
     vol.Optional(CONF_TOGGLE_HEATERS): selector.BooleanSelector(),
-    vol.Optional(CONF_COOLERS): selector.EntitySelector(
+    vol.Optional(CONF_COOLERS, default=set()): selector.EntitySelector(
         selector.EntitySelectorConfig(domain=CLIMATE_DOMAIN, multiple=True),
     ),
     vol.Optional(CONF_TOGGLE_COOLERS): selector.BooleanSelector(),
