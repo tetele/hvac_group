@@ -143,6 +143,7 @@ class HvacGroupActuator:
         self.loaded: bool = False
 
         self._action_to_commit: Coroutine | None = None
+        self._commit_semaphore = asyncio.Semaphore()
 
     @property
     def entity_id(self) -> str:
@@ -159,12 +160,13 @@ class HvacGroupActuator:
         """Get the action to commit."""
         return self._action_to_commit
 
-    def _set_commit_action(self, action: Coroutine):
+    async def _set_commit_action(self, action: Coroutine):
         """Set the action to commit."""
-        if self._action_to_commit:
-            LOGGER.debug("Closing commit action on %s", self._entity_id)
-            self._action_to_commit.close()
-        self._action_to_commit = action
+        async with self._commit_semaphore:
+            if self._action_to_commit:
+                LOGGER.debug("Closing commit action on %s", self._entity_id)
+                self._action_to_commit.close()
+            self._action_to_commit = action
 
     def set_context(self, context: Context | None) -> None:
         """Set the context."""
@@ -181,7 +183,7 @@ class HvacGroupActuator:
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set the HVAC mode on an actuator."""
-        self._set_commit_action(
+        await self._set_commit_action(
             create_coro(
                 self._async_call_climate_service,
                 self._entity_id,
@@ -240,7 +242,7 @@ class HvacGroupActuator:
         if hvac_mode is not None:
             data.update({ATTR_HVAC_MODE: hvac_mode})
 
-        self._set_commit_action(
+        await self._set_commit_action(
             create_coro(
                 self._async_call_climate_service,
                 self._entity_id,
@@ -298,14 +300,19 @@ class HvacGroupActuator:
 
     async def async_commit(self) -> None:
         """Execute the last service call."""
-        if self._action_to_commit is not None:
-            await self._action_to_commit
-            LOGGER.debug(
-                "Commit action run for %s %s. Removing", self.__class__, self._entity_id
-            )
-            self._action_to_commit = None
-        else:
-            LOGGER.debug("No commit action for %s %s", self.__class__, self._entity_id)
+        async with self._commit_semaphore:
+            if self._action_to_commit is not None:
+                await self._action_to_commit
+                LOGGER.debug(
+                    "Commit action run for %s %s. Removing",
+                    self.__class__,
+                    self._entity_id,
+                )
+                self._action_to_commit = None
+            else:
+                LOGGER.debug(
+                    "No commit action for %s %s", self.__class__, self._entity_id
+                )
 
 
 class HvacGroupHeater(HvacGroupActuator):
