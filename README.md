@@ -24,6 +24,8 @@ _Create a custom thermostat to control multiple other climate components. Useful
 
 ### HACS
 
+[![Open your Home Assistant instance and open HVAC Group inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=tetele&repository=hvac_group&category=Integration)
+
 1. If you're using HACS, go to "HACS" > "Integrations" and add `https://github.com/tetele/hvac_group` as a [custom repository](https://hacs.xyz/docs/faq/custom_repositories/) under the "Integration" category
 1. In the HA UI go to "Settings" -> "Devices & services" -> "Helpers" click "+" and search for "HVAC group"
 
