@@ -1,2 +1,2 @@
-pytest-homeassistant-custom-component==0.13.87
+pytest-homeassistant-custom-component==0.13.89
 pre-commit
