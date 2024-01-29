@@ -1,8 +1,8 @@
 {
-    "name": "HVAC Group",
-    "filename": "hvac_group.zip",
-    "hide_default_branch": true,
-    "homeassistant": "2023.9.0",
-    "render_readme": true,
-    "zip_release": true
+  "name": "HVAC Group",
+  "filename": "hvac_group.zip",
+  "hide_default_branch": true,
+  "homeassistant": "2024.1.0",
+  "render_readme": true,
+  "zip_release": true
 }

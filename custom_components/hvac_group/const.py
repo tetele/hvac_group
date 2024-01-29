@@ -18,4 +18,4 @@ CONF_TOGGLE_COOLERS = "toggle_coolers"
 CONF_TOGGLE_HEATERS = "toggle_heaters"
 CONF_HIDE_MEMBERS = "hide_members"
 
-VERSION = "0.0.3"
+VERSION = "0.1.1"
