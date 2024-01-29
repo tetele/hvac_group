@@ -698,14 +698,15 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                     ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
                     & self._attr_supported_features
                 ):
-                    target_temp_low = self._target_temp_low or old_state.attributes.get(
-                        ATTR_TARGET_TEMP_LOW, self.min_temp
+                    target_temp_low = (
+                        self._target_temp_low
+                        or old_state.attributes.get(ATTR_TARGET_TEMP_LOW)
+                        or self.min_temp
                     )
                     target_temp_high = (
                         self._target_temp_high
-                        or old_state.attributes.get(
-                            ATTR_TARGET_TEMP_HIGH, self.max_temp
-                        )
+                        or old_state.attributes.get(ATTR_TARGET_TEMP_HIGH)
+                        or self.max_temp
                     )
                     await self.async_set_temperature(
                         target_temp_low=target_temp_low,
@@ -713,13 +714,21 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                     )
                 else:
                     default_temp = self.max_temp if self._coolers else self.min_temp
-                    target_temp = self._target_temperature or old_state.attributes.get(
-                        ATTR_TEMPERATURE, default_temp
+                    target_temp = (
+                        self._target_temperature
+                        or old_state.attributes.get(ATTR_TEMPERATURE)
+                        or default_temp
                     )
                     await self.async_set_temperature(temperature=target_temp)
 
-                if self._hvac_mode is None and old_state.state:
-                    await self.async_set_hvac_mode(old_state.state)
+                if self._hvac_mode is None:
+                    desired_hvac_state = old_state.state
+                    if (
+                        desired_hvac_state is None
+                        or desired_hvac_state not in self._attr_hvac_modes
+                    ):
+                        desired_hvac_state = HVACMode.OFF
+                    await self.async_set_hvac_mode(desired_hvac_state)
 
             else:
                 # No previous state, try and restore defaults
