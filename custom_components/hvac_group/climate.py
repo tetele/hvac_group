@@ -530,8 +530,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self._max_temp = max_temp or DEFAULT_MAX_TEMP
         self._target_temp_low = target_temp_low
         self._target_temp_high = target_temp_high
-        if len(self._heaters) == 0:
-            self._target_temperature = target_temp_high
+
+        self._target_temperature = target_temp_high
         if len(self._coolers) == 0:
             self._target_temperature = target_temp_low
 
