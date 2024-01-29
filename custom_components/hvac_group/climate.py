@@ -225,7 +225,7 @@ class HvacGroupActuator:
             return
 
         data = {}
-        if ClimateEntityFeature.TARGET_TEMPERATURE_RANGE in self.state.attributes.get(
+        if ClimateEntityFeature.TARGET_TEMPERATURE_RANGE & self.state.attributes.get(
             ATTR_SUPPORTED_FEATURES, 0
         ):
             data = {
@@ -696,7 +696,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 # If we have no initial temperature, restore
                 if (
                     ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-                    in self._attr_supported_features
+                    & self._attr_supported_features
                 ):
                     target_temp_low = self._target_temp_low or old_state.attributes.get(
                         ATTR_TARGET_TEMP_LOW, self.min_temp
@@ -971,7 +971,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                     self._current_temperature,
                     f"{self._target_temp_low}-{self._target_temp_high}"
                     if ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-                    in self._attr_supported_features
+                    & self._attr_supported_features
                     else f"{self._target_temperature}",
                     self._hvac_mode,
                     self.entity_id,
@@ -1173,9 +1173,9 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
         if (
             ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-            in state.attributes[ATTR_SUPPORTED_FEATURES]
+            & state.attributes[ATTR_SUPPORTED_FEATURES]
             or ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-            in self._attr_supported_features
+            & self._attr_supported_features
         ):
             self._attr_supported_features = (
                 ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
@@ -1240,7 +1240,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             "Setting temperature (%s) on HVAC group %s",
             f"{temp_low}-{temp_high}"
             if ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-            in self._attr_supported_features
+            & self._attr_supported_features
             else f"{temp}",
             self.entity_id,
         )
