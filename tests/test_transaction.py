@@ -1,33 +1,38 @@
 """Test transactions."""
 
-from collections.abc import Coroutine
 import pytest
 
-from custom_components.hvac_group.transaction import Transaction, TransactionException
+from homeassistant.core import HomeAssistant
+
+from custom_components.hvac_group.actuator import HvacGroupHeater
+from custom_components.hvac_group.transaction import (
+    Transaction,
+    TransactionException,
+    TransactionActionType,
+)
 
 
-def test_begin() -> None:
+def test_begin(hass: HomeAssistant) -> None:
     """Test beginning a transaction."""
     t = Transaction()
 
     assert not t.in_progress
-    assert not t.coros
+    assert not t.actions
 
     t.begin()
     assert t.in_progress
-    assert not t.coros
+    assert not t.actions
 
-    async def new_coro() -> None:
-        pass
+    heater = HvacGroupHeater(hass, "climate.heater")
 
-    t.add(new_coro)
-    assert new_coro in t.coros
+    t.add(heater, TransactionActionType.SET_HVAC_MODE, {"hvac_mode": "off"})
+    assert heater.entity_id in t.actions
 
     with pytest.raises(TransactionException):
         t.begin()
 
 
-async def test_commit() -> None:
+async def test_commit(hass: HomeAssistant) -> None:
     """Test committing a transaction."""
     t = Transaction()
 
@@ -37,30 +42,22 @@ async def test_commit() -> None:
     t.begin()
     assert t.in_progress
 
-    coroutines: list[Coroutine] = []
+    heater = HvacGroupHeater(hass, "climate.heater")
 
-    def generate_new_coro() -> Coroutine:
-        async def new_coro() -> int:
-            return 12
-
-        coro = new_coro()
-        coroutines.append(coro)
-
-        return coro
-
-    t.add(generate_new_coro())
+    t.add(heater, TransactionActionType.SET_HVAC_MODE, {"hvac_mode": "off"})
+    t.add(heater, TransactionActionType.SET_HVAC_MODE, {"hvac_mode": "on"})
 
     result = await t.commit()
-    assert result == [12]
+    target = result.get(heater.entity_id)
+    assert target
+    assert len(target.services) == 1
+    assert TransactionActionType.SET_HVAC_MODE in target.services
+    assert target.services[TransactionActionType.SET_HVAC_MODE] == {"hvac_mode": "on"}
     assert not t.in_progress
-    assert not t.coros
-
-    assert len(coroutines) == 1
-    with pytest.raises(RuntimeError):
-        await coroutines[0]
+    assert not t.actions
 
 
-async def test_cancel() -> None:
+async def test_cancel(hass: HomeAssistant) -> None:
     """Test cancelling a transaction."""
     t = Transaction()
 
@@ -69,23 +66,12 @@ async def test_cancel() -> None:
 
     t.begin()
 
-    coroutines: list[Coroutine] = []
+    heater = HvacGroupHeater(hass, "climate.heater")
 
-    def generate_new_coro() -> Coroutine:
-        async def new_coro() -> int:
-            return 12
+    t.add(heater, TransactionActionType.SET_HVAC_MODE, {"hvac_mode": "off"})
 
-        coro = new_coro()
-        coroutines.append(coro)
-
-        return coro
-
-    t.add(generate_new_coro())
+    assert len(t.actions) == 1
 
     t.cancel()
     assert not t.in_progress
-    assert not t.coros
-
-    assert len(coroutines) == 1
-    with pytest.raises(RuntimeError):
-        await coroutines[0]
+    assert not t.actions

@@ -177,6 +177,14 @@ class HvacGroupActuator:
             blocking=True,
         )
 
+    async def async_call_climate_service(
+        self, service: str, data: dict[str, Any]
+    ) -> None:
+        """Public wrapper for calling a climate service."""
+        await self._async_call_climate_service(
+            entity_id=self._entity_id, service=service, data=data
+        )
+
     async def async_turn_on(
         self,
         temperature: float | None = None,
