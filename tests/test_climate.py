@@ -190,7 +190,7 @@ async def test_setup(
     assert float(hvac_group.attributes.get(ATTR_CURRENT_TEMPERATURE)) == 22.5
 
     with patch(
-        "custom_components.hvac_group.climate.HvacGroupActuator._async_call_climate_service"
+        "custom_components.hvac_group.actuator.HvacGroupActuator._async_call_climate_service"
     ) as mock_call_climate_service:
         await hass.services.async_call(
             CLIMATE_DOMAIN,
@@ -333,7 +333,7 @@ async def test_call_forwarding(
     assert hvac_group_entity_id
 
     with patch(
-        "custom_components.hvac_group.climate.HvacGroupActuator._async_call_climate_service"
+        "custom_components.hvac_group.actuator.HvacGroupActuator._async_call_climate_service"
     ) as mock_call_climate_service:
         # command_args is a dict with keys representing actuators or the temp sensor
         service_call_data = {}
@@ -368,5 +368,5 @@ async def test_call_forwarding(
             expected_args: dict[str, Any] = output.get(call.args[0], {})
             assert expected_args.items() <= call.args[2].items(), (
                 f"{call.args[0]} expected a call with {expected_args}, "
-                "actual value was {call.args[2]}"
+                f"actual value was {call.args[2]}"
             )
