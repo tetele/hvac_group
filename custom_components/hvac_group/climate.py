@@ -208,7 +208,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self._active = False
 
         self._require_actuator_mass_refresh: bool = False
-        self._state_restored = False
+        self._old_state: State | None = None
 
     @property
     def current_temperature(self) -> float | None:
@@ -330,45 +330,10 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             self._update_supported_features(cooler.state)
             cooler.loaded = True
 
-
         # Check If we have an old state
         if (old_state := await self.async_get_last_state()) is not None:
-            # If we have no initial temperature, restore
-            if (
-                ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-                & self._attr_supported_features
-            ):
-                target_temp_low = (
-                    self._target_temp_low
-                    or old_state.attributes.get(ATTR_TARGET_TEMP_LOW)
-                    or self.min_temp
-                )
-                target_temp_high = (
-                    self._target_temp_high
-                    or old_state.attributes.get(ATTR_TARGET_TEMP_HIGH)
-                    or self.max_temp
-                )
-                await self.async_set_temperature(
-                    target_temp_low=target_temp_low,
-                    target_temp_high=target_temp_high,
-                )
-            else:
-                default_temp = self.max_temp if self._coolers else self.min_temp
-                target_temp = (
-                    self._target_temperature
-                    or old_state.attributes.get(ATTR_TEMPERATURE)
-                    or default_temp
-                )
-                await self.async_set_temperature(temperature=target_temp)
-
-            desired_hvac_state = old_state.state
-            if (
-                desired_hvac_state is None
-                or desired_hvac_state not in self._attr_hvac_modes
-            ):
-                desired_hvac_state = HVACMode.OFF
-
-            self._hvac_mode = desired_hvac_state
+            self._old_state = old_state
+            await self.async_restore_old_state()
 
         else:
             # No previous state, try and restore defaults
@@ -401,43 +366,71 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         ) -> None:
             """Handle actuator updates, like min/max temp changes."""
 
+            if event.data["new_state"] is None:
+                return
+
+            entity_id = event.data["entity_id"]
+            actuator_just_loaded = False
+            attempt_restore_old_state = False
+
+            # Just  mark actuators as loaded if they weren't previously
+            # Handling happens below
+
+            if entity_id in self._heaters:
+                if not self._heaters[entity_id].loaded:
+                    self._heaters[entity_id].loaded = True
+                    actuator_just_loaded = True
+                    attempt_restore_old_state = (
+                        attempt_restore_old_state
+                        or self._update_hvac_modes(HvacActuatorType.HEATER)
+                    )
+
+            if entity_id in self._coolers:
+                if not self._coolers[entity_id].loaded:
+                    self._coolers[entity_id].loaded = True
+                    actuator_just_loaded = True
+                    attempt_restore_old_state = (
+                        attempt_restore_old_state
+                        or self._update_hvac_modes(HvacActuatorType.COOLER)
+                    )
+
+            new_state = event.data["new_state"]
+            # Force checking of all attributes if the actuator was just loaded
+            old_state = event.data["old_state"] if not actuator_just_loaded else None
+            state_changes = state_diff(new_state, old_state)
+
             LOGGER.debug(
                 "Actutator %s changed state: %s (context %s)",
                 event.data["entity_id"],
-                state_diff(event.data["new_state"], event.data["old_state"]),
+                state_changes,
                 event.context.id,
             )
 
-            entity_id = event.data["entity_id"]
-            if (heater := self._heaters.get(entity_id)) is not None:
-                if not heater.initialized:
-                    self._require_actuator_mass_refresh = True
+            if (
+                state_changes.get("attributes", {ATTR_MIN_TEMP: None}).get(
+                    ATTR_MIN_TEMP
+                )
+                is not None
+                or state_changes.get("attributes", {ATTR_MAX_TEMP: None}).get(
+                    ATTR_MAX_TEMP
+                )
+                is not None
+            ):
+                self._update_temp_limits(entity_id, new_state, old_state)
 
-                if not heater.loaded:
-                    self._update_temp_limits(entity_id, heater.state)
-                    self._update_temp_limits(
-                        entity_id,
-                        event.data["new_state"],
-                        event.data["old_state"],
-                    )
-                    heater.loaded = True
+            if actuator_just_loaded:
+                attempt_restore_old_state = (
+                    self._update_supported_features(new_state)
+                    or attempt_restore_old_state
+                )
+                if attempt_restore_old_state:
+                    await self.async_restore_old_state()
 
-                await self.async_defer_or_update_ha_state()
+                if event.context == self._context:
+                    # Ignore if triggered by an internal change
+                    return
 
-            if (cooler := self._coolers.get(entity_id)) is not None:
-                if not cooler.initialized:
-                    self._require_actuator_mass_refresh = True
-
-                if not self._coolers[entity_id].loaded:
-                    self._update_temp_limits(entity_id, cooler.state)
-                    self._update_temp_limits(
-                        entity_id,
-                        event.data["new_state"],
-                        event.data["old_state"],
-                    )
-                    cooler.loaded = True
-
-                await self.async_defer_or_update_ha_state()
+                # TODO sync new actuator to rest
 
         @callback
         async def async_sensor_state_changed_listener(
@@ -488,6 +481,55 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         await self._heaters.async_commit()
         await self._coolers.async_commit()
         self.async_write_ha_state()
+
+    async def async_restore_old_state(self) -> None:
+        """Restore old state if possible based on which group members have been loaded."""
+
+        if (old_state := self._old_state) is None:
+            return
+
+        # If we have no initial temperature, restore
+        if (
+            ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+            & self._attr_supported_features
+        ):
+            target_temp_low = (
+                self._target_temp_low
+                or old_state.attributes.get(ATTR_TARGET_TEMP_LOW)
+                or self.min_temp
+            )
+            target_temp_high = (
+                self._target_temp_high
+                or old_state.attributes.get(ATTR_TARGET_TEMP_HIGH)
+                or self.max_temp
+            )
+            self._target_temperature = None
+            await self.async_set_temperature(
+                target_temp_low=target_temp_low,
+                target_temp_high=target_temp_high,
+            )
+        else:
+            default_temp = self.max_temp if self._coolers else self.min_temp
+            target_temp = self._target_temperature or old_state.attributes.get(
+                ATTR_TEMPERATURE
+            )
+            if target_temp is None and self._coolers:
+                target_temp = old_state.attributes.get(ATTR_TARGET_TEMP_HIGH)
+            if target_temp is None and self._heaters:
+                target_temp = old_state.attributes.get(ATTR_TARGET_TEMP_LOW)
+            if target_temp is None:
+                target_temp = default_temp
+            self._target_temp_low = self._target_temp_high = None
+            await self.async_set_temperature(temperature=target_temp)
+
+        desired_hvac_state = old_state.state
+        if (
+            desired_hvac_state is None
+            or desired_hvac_state not in self._attr_hvac_modes
+        ):
+            desired_hvac_state = HVACMode.OFF
+
+        self._hvac_mode = desired_hvac_state
 
     @callback
     async def async_update_temperature_sensor(
@@ -742,8 +784,13 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             if self._changing_actuators_lock.locked():
                 self._changing_actuators_lock.release()
 
-    def _update_hvac_modes(self, actuator_type: HvacActuatorType) -> None:
-        """Update the HVAC modes available for the group when a new actuator is loaded."""
+    def _update_hvac_modes(self, actuator_type: HvacActuatorType) -> bool:
+        """Update the HVAC modes available for the group when a new actuator is loaded.
+
+        Returns whether the features have changed
+        """
+
+        modes_have_changed: bool = False
 
         required_mode = (
             HVACMode.HEAT if actuator_type == HvacActuatorType.HEATER else HVACMode.COOL
@@ -758,26 +805,51 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             if opposite_mode in self._attr_hvac_modes:
                 self._attr_hvac_modes.remove(opposite_mode)
                 self._attr_hvac_modes.append(HVACMode.HEAT_COOL)
+                modes_have_changed = not bool(
+                    self._attr_supported_features
+                    & ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+                )
                 self._attr_supported_features = (
                     ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
                 )
             else:
                 self._attr_hvac_modes.append(required_mode)
+                modes_have_changed = not bool(
+                    self._attr_supported_features
+                    & ClimateEntityFeature.TARGET_TEMPERATURE
+                )
                 self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
 
-    def _update_supported_features(self, actuator_state: State) -> None:
-        """Update the supported_features based on what a new actuator should support."""
+        return modes_have_changed
+
+    def _update_supported_features(self, actuator_state: State) -> bool:
+        """Update the supported_features based on what a new actuator should support.
+
+        Returns whether the features have changed
+        """
+        feature_has_changed: bool = False
         if (
             ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
             & actuator_state.attributes[ATTR_SUPPORTED_FEATURES]
             or ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
             & self._attr_supported_features
         ):
+            feature_has_changed = not bool(
+                ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+                & self._attr_supported_features
+            )
             self._attr_supported_features = (
                 ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
             )
+            self._target_temperature = None
         else:
+            feature_has_changed = not bool(
+                ClimateEntityFeature.TARGET_TEMPERATURE & self._attr_supported_features
+            )
             self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+            self._target_temp_low = self._target_temp_high = None
+
+        return feature_has_changed
 
     @callback
     def _update_temp_limits(
