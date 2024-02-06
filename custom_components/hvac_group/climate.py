@@ -611,6 +611,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             return
 
         async with self._hvac_running_lock:
+            # Wait until we get a current temperature, target mode and target temp
+            # for the first actuation
             if (
                 not self._active
                 and None
@@ -624,16 +626,18 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 )
             ):
                 self._active = True
-                LOGGER.info(
+                LOGGER.debug(
                     (
                         "Obtained current and target temperatures (%s -> %s). "
                         "Setting mode %s on HVAC group %s."
                     ),
                     self._current_temperature,
-                    f"{self._target_temp_low}-{self._target_temp_high}"
-                    if ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-                    & self._attr_supported_features
-                    else f"{self._target_temperature}",
+                    (
+                        f"{self._target_temp_low}-{self._target_temp_high}"
+                        if ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+                        & self._attr_supported_features
+                        else f"{self._target_temperature}"
+                    ),
                     self._hvac_mode,
                     self.entity_id,
                 )
@@ -819,6 +823,9 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         opposite_mode = (
             HVACMode.COOL if actuator_type == HvacActuatorType.HEATER else HVACMode.HEAT
         )
+
+        LOGGER.debug("Making sure %s supports %sing", self.entity_id, required_mode)
+
         if not (
             required_mode in self._attr_hvac_modes
             or HVACMode.HEAT_COOL in self._attr_hvac_modes
@@ -840,6 +847,14 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                     & ClimateEntityFeature.TARGET_TEMPERATURE
                 )
                 self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+
+        if modes_have_changed:
+            modes = [mode for mode in HVACMode if mode in self._attr_hvac_modes]
+            LOGGER.debug(
+                "New HVAC modes supported by %s: %s",
+                self.entity_id,
+                ",".join(map(str, modes)),
+            )
 
         return modes_have_changed
 
@@ -975,15 +990,20 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         if temp is not None:
             self._target_temperature = temp
 
-        if hvac_mode is not None and hvac_mode in self._attr_hvac_modes:
+        if hvac_mode is not None:
+            if hvac_mode not in self._attr_hvac_modes:
+                LOGGER.warning("Unsupported hvac mode: %s", hvac_mode)
+                return
             self._hvac_mode = hvac_mode
 
         LOGGER.debug(
             "Setting temperature (%s) on HVAC group %s",
-            f"{temp_low}-{temp_high}"
-            if ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-            & self._attr_supported_features
-            else f"{temp}",
+            (
+                f"{temp_low}-{temp_high}"
+                if ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+                & self._attr_supported_features
+                else f"{temp}"
+            ),
             self.entity_id,
         )
 
