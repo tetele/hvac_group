@@ -167,6 +167,54 @@ async def hvac_group_entry(
     return entry
 
 
+@pytest.mark.asyncio
+async def test_bare_setup(hass: HomeAssistant) -> None:
+    """Test an empty config entry setup."""
+
+    entry = MockConfigEntry(
+        title="HVAC group 1",
+        domain=DOMAIN,
+        options={
+            CONF_PLATFORM: DOMAIN,
+            CONF_NAME: "Test HVAC",
+            CONF_HEATERS: [
+                # DEMO_HEATER_SINGLE_TEMP,
+                # DEMO_HEATER_TEMP_RANGE,
+                # DEMO_COOLER_HEATER,
+            ],
+            CONF_TOGGLE_HEATERS: False,
+            CONF_COOLERS: [
+                # DEMO_COOLER_SINGLE_TEMP,
+                # DEMO_COOLER_TEMP_RANGE,
+                # DEMO_COOLER_HEATER,
+            ],
+            CONF_TOGGLE_COOLERS: False,
+            CONF_CURRENT_TEMPERATURE_ENTITY_ID: DEMO_TEMP_SENSOR,
+        },
+        unique_id="uniq-1",
+    )
+
+    with patch(
+        "custom_components.hvac_group.climate.HvacGroupClimateEntity.async_commit_state_if_running"
+    ) as commit_callback:
+        entry.add_to_hass(hass)
+        # assert not add_callback.called
+
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        await hass.async_start()
+        await hass.async_block_till_done()
+
+        assert commit_callback.called
+
+    entity_registry = er.async_get(hass)
+    entity_id = entity_registry.async_get_entity_id(
+        CLIMATE_DOMAIN, DOMAIN, entry.entry_id
+    )
+
+    assert entity_id == "climate.test_hvac"
+
+
 @pytest.mark.parametrize(("setup_extras", "group_extras"), [({}, {})])
 @pytest.mark.asyncio
 async def test_setup(
