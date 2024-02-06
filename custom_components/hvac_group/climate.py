@@ -205,6 +205,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
         self._hvac_running_lock = asyncio.Lock()
         self._changing_actuators_lock = asyncio.Lock()
+        self._state_changed_lock = asyncio.Lock()
         self._active = False
 
         self._require_actuator_mass_refresh: bool = False
@@ -369,81 +370,104 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             if event.data["new_state"] is None:
                 return
 
-            entity_id = event.data["entity_id"]
-            actuator_just_loaded = False
-            attempt_restore_old_state = False
+            async with self._state_changed_lock:
+                # Take changes from actuators/sensors one by one
 
-            # Just  mark actuators as loaded if they weren't previously
-            # Handling happens below
-
-            if entity_id in self._heaters:
-                if not self._heaters[entity_id].loaded:
-                    self._heaters[entity_id].loaded = True
-                    actuator_just_loaded = True
-                    attempt_restore_old_state = (
-                        attempt_restore_old_state
-                        or self._update_hvac_modes(HvacActuatorType.HEATER)
-                    )
-
-            if entity_id in self._coolers:
-                if not self._coolers[entity_id].loaded:
-                    self._coolers[entity_id].loaded = True
-                    actuator_just_loaded = True
-                    attempt_restore_old_state = (
-                        attempt_restore_old_state
-                        or self._update_hvac_modes(HvacActuatorType.COOLER)
-                    )
-
-            new_state = event.data["new_state"]
-            # Force checking of all attributes if the actuator was just loaded
-            old_state = event.data["old_state"] if not actuator_just_loaded else None
-            state_changes = state_diff(new_state, old_state)
-
-            LOGGER.debug(
-                "Actutator %s changed state: %s (context %s)",
-                event.data["entity_id"],
-                state_changes,
-                event.context.id,
-            )
-
-            if (
-                state_changes.get("attributes", {ATTR_MIN_TEMP: None}).get(
-                    ATTR_MIN_TEMP
-                )
-                is not None
-                or state_changes.get("attributes", {ATTR_MAX_TEMP: None}).get(
-                    ATTR_MAX_TEMP
-                )
-                is not None
-            ):
-                self._update_temp_limits(entity_id, new_state, old_state)
-
-            if actuator_just_loaded:
-                attempt_restore_old_state = (
-                    self._update_supported_features(new_state)
-                    or attempt_restore_old_state
-                )
-                if attempt_restore_old_state:
-                    await self.async_restore_old_state()
-
+                # ...except if it was triggered by running the HVAC
                 if event.context == self._context:
                     # Ignore if triggered by an internal change
                     return
+                await self.async_set_context(event.context)
 
-                # TODO sync new actuator to rest
+                entity_id = event.data["entity_id"]
+                actuator_just_loaded = False
+                attempt_restore_old_state = False
+
+                # Just  mark actuators as loaded if they weren't previously
+                # Handling happens below
+
+                if entity_id in self._heaters:
+                    if not self._heaters[entity_id].loaded:
+                        self._heaters[entity_id].loaded = True
+                        actuator_just_loaded = True
+                        attempt_restore_old_state = (
+                            attempt_restore_old_state
+                            or self._update_hvac_modes(HvacActuatorType.HEATER)
+                        )
+
+                if entity_id in self._coolers:
+                    if not self._coolers[entity_id].loaded:
+                        self._coolers[entity_id].loaded = True
+                        actuator_just_loaded = True
+                        attempt_restore_old_state = (
+                            attempt_restore_old_state
+                            or self._update_hvac_modes(HvacActuatorType.COOLER)
+                        )
+
+                new_state = event.data["new_state"]
+                # Force checking of all attributes if the actuator was just loaded
+                old_state = (
+                    event.data["old_state"] if not actuator_just_loaded else None
+                )
+                state_changes = state_diff(new_state, old_state)
+
+                LOGGER.debug(
+                    "Actutator %s %s: %s (context %s)",
+                    event.data["entity_id"],
+                    "just loaded" if actuator_just_loaded else "changed state",
+                    state_changes,
+                    event.context.id,
+                )
+
+                if (
+                    state_changes.get("attributes", {ATTR_MIN_TEMP: None}).get(
+                        ATTR_MIN_TEMP
+                    )
+                    is not None
+                    or state_changes.get("attributes", {ATTR_MAX_TEMP: None}).get(
+                        ATTR_MAX_TEMP
+                    )
+                    is not None
+                ):
+                    self._update_temp_limits(entity_id, new_state, old_state)
+
+                if actuator_just_loaded:
+                    attempt_restore_old_state = (
+                        self._update_supported_features(new_state)
+                        or attempt_restore_old_state
+                    )
+                    if attempt_restore_old_state:
+                        await self.async_restore_old_state()
+
+                    if self._heaters.loaded and self._coolers.loaded:
+                        self._old_state = None
+
+                    # TODO sync new actuator to rest
+                else:
+                    # TODO send new temps to group
+                    pass
 
         @callback
         async def async_sensor_state_changed_listener(
             event: EventType[EventStateChangedData],
         ) -> None:
             """Handle temperature sensor updates."""
-            self.async_set_context(event.context)
-            await self.async_update_temperature_sensor(
-                event.data["entity_id"],
-                event.data["new_state"],
-                event.data["old_state"],
-            )
-            await self.async_defer_or_update_ha_state()
+
+            async with self._state_changed_lock:
+                # Take changes from actuators/sensors one by one
+
+                # ...except if it was triggered by running the HVAC
+                if event.context == self._context:
+                    # Ignore if triggered by an internal change
+                    return
+                await self.async_set_context(event.context)
+
+                await self.async_update_temperature_sensor(
+                    event.data["entity_id"],
+                    event.data["new_state"],
+                    event.data["old_state"],
+                )
+                await self.async_defer_or_update_ha_state()
 
         self.async_on_remove(
             async_track_state_change_event(
