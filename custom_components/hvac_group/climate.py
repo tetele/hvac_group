@@ -467,7 +467,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                     event.data["new_state"],
                     event.data["old_state"],
                 )
-                await self.async_defer_or_update_ha_state()
+                await self.async_commit_state_if_running()
 
         self.async_on_remove(
             async_track_state_change_event(
@@ -486,20 +486,22 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
         async def _update_at_start(_: HomeAssistant) -> None:
             """Initialize the functioning of the group."""
+            LOGGER.debug("Updating %s on Home Assistant start", self.entity_id)
             self._require_actuator_mass_refresh = True
-            await self.async_defer_or_update_ha_state(update_actuators=True)
+            await self.async_commit_state_if_running(update_actuators=True)
 
         self.async_on_remove(start.async_at_start(self.hass, _update_at_start))
 
     @callback
-    async def async_defer_or_update_ha_state(
+    async def async_commit_state_if_running(
         self, update_actuators: bool = False
     ) -> None:
-        """Only update once at start."""
+        """Compute and write the group state, if HA is running."""
         if not self.hass.is_running:
             return
 
         await self.async_run_hvac(update_actuators=update_actuators)
+
         # Commit changes. Note that common actuators have different HvacGroupActuator
         # instances, each with their own commit action
         await self._heaters.async_commit()
@@ -594,7 +596,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             float(new_temperature) if new_temperature is not None else new_temperature
         )
 
-        await self.async_defer_or_update_ha_state()
+        await self.async_commit_state_if_running()
 
     @callback
     async def async_run_hvac(self, update_actuators: bool = False) -> None:
@@ -960,7 +962,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
         self._hvac_mode = hvac_mode
         self._require_actuator_mass_refresh = True
-        await self.async_defer_or_update_ha_state(update_actuators=True)
+        await self.async_commit_state_if_running(update_actuators=True)
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperatures."""
@@ -991,7 +993,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         )
 
         self._require_actuator_mass_refresh = True
-        await self.async_defer_or_update_ha_state(update_actuators=True)
+        await self.async_commit_state_if_running(update_actuators=True)
 
     async def _async_turn_on_coolers(self, pure: bool = False) -> None:
         """Turn on coolers. If `pure` is `True`, it only affects coolers which are not also heaters."""
