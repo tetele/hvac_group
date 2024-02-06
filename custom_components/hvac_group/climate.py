@@ -677,11 +677,6 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                             pure=True
                         )  # avoid turning off common elements twice
 
-                self._heaters.mark_initialized()
-                self._coolers.mark_initialized()
-
-                LOGGER.debug("Actuators initialized for HVAC group %s", self.entity_id)
-
             needs_cooling = False
             needs_heating = False
 

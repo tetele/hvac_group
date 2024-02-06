@@ -44,7 +44,6 @@ class HvacGroupActuator:
         self._context: Context | None = None
 
         self._entity_id: str = entity_id
-        self.initialized: bool = False
         self.loaded: bool = False
 
         self._action_to_commit: Coroutine | None = None
@@ -367,11 +366,6 @@ class HvacGroupActuatorDict(dict[str, HvacGroupActuator]):
         """Commit state changes for all members."""
         for actuator in self.values():
             await actuator.async_commit()
-
-    def mark_initialized(self) -> None:
-        """Set all members as initialized."""
-        for actuator in self.values():
-            actuator.initialized = True
 
 
 async def create_coro(function: Callable, *args, **kwargs) -> Any:
