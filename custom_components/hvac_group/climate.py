@@ -959,7 +959,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self._coolers.update({cooler_entity_id: cooler})
 
         if cooler.state:
-            self._update_hvac_modes(HvacActuatorType.HEATER)
+            self._update_hvac_modes(HvacActuatorType.COOLER)
             self._update_supported_features(cooler.state)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
