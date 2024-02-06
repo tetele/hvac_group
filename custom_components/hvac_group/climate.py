@@ -373,12 +373,6 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             async with self._state_changed_lock:
                 # Take changes from actuators/sensors one by one
 
-                # ...except if it was triggered by running the HVAC
-                if event.context == self._context:
-                    # Ignore if triggered by an internal change
-                    return
-                await self.async_set_context(event.context)
-
                 entity_id = event.data["entity_id"]
                 actuator_just_loaded = False
                 attempt_restore_old_state = False
@@ -445,7 +439,11 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                     # TODO sync new actuator to rest
                 else:
                     # TODO send new temps to group
-                    pass
+
+                    if event.context == self._context:
+                        # Ignore if triggered by an internal change
+                        return
+                    self.async_set_context(event.context)
 
         @callback
         async def async_sensor_state_changed_listener(
@@ -457,10 +455,10 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 # Take changes from actuators/sensors one by one
 
                 # ...except if it was triggered by running the HVAC
-                if event.context == self._context:
+                if event.context == self._context and self.hass.is_running:
                     # Ignore if triggered by an internal change
                     return
-                await self.async_set_context(event.context)
+                self.async_set_context(event.context)
 
                 await self.async_update_temperature_sensor(
                     event.data["entity_id"],
