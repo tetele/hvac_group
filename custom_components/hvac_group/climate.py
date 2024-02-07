@@ -26,6 +26,8 @@ from homeassistant.const import (
     CONF_NAME,
     PRECISION_HALVES,
     PRECISION_TENTHS,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers import entity_registry as er
@@ -210,6 +212,21 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
         self._require_actuator_mass_refresh: bool = False
         self._old_state: State | None = None
+
+    @property
+    def available(self) -> bool:
+        """Return climate group availability."""
+        return (
+            (self._current_temperature is not None)
+            and (len(self._attr_hvac_modes) > 0)
+            and (
+                self._target_temperature is not None
+                or (
+                    self._target_temp_high is not None
+                    and self._target_temp_low is not None
+                )
+            )
+        )
 
     @property
     def current_temperature(self) -> float | None:
@@ -564,6 +581,9 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
     ) -> None:
         """Update sensor temperature."""
         if new_state is None:
+            return
+
+        if new_state.state in (None, STATE_UNAVAILABLE, STATE_UNKNOWN):
             return
 
         # Current temperature can be retrieved from a `climate` or `sensor` entity
