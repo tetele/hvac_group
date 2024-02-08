@@ -26,18 +26,8 @@ _Create a custom thermostat to control multiple other climate components. Useful
 
 [![Open your Home Assistant instance and open HVAC Group inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=tetele&repository=hvac_group&category=Integration)
 
-1. If you're using HACS, go to "HACS" > "Integrations" and add `https://github.com/tetele/hvac_group` as a [custom repository](https://hacs.xyz/docs/faq/custom_repositories/) under the "Integration" category
-1. In the HA UI go to "Settings" -> "Devices & services" -> "Helpers" click "+" and search for "HVAC group"
-
-### Standalone
-
-1. Using the tool of choice open the directory (folder) for your HA configuration (where you find `configuration.yaml`).
-1. If you do not have a `custom_components` directory (folder) there, you need to create it.
-1. In the `custom_components` directory (folder) create a new folder called `hvac_group`.
-1. Download _all_ the files from the `custom_components/hvac_group/` directory (folder) in this repository.
-1. Place the files you downloaded in the new directory (folder) you created.
-1. Restart Home Assistant
-1. In the HA UI go to "Settings" -> "Devices & services" -> "Helpers" click "+" and search for "HVAC group"
+1. If you're using HACS, go to "HACS" > "Integrations" and search for the `HVAC Group` integration, then download it
+1. In the HA UI go to "Settings" -> "Devices & services" -> "Helpers" click "+" and search for "HVAC Group"
 
 ## Configuration is done in the UI
 
@@ -64,7 +54,7 @@ If you want to contribute to this please read the [Contribution guidelines](CONT
 [commits-shield]: https://img.shields.io/github/commit-activity/y/tetele/hvac_group.svg?style=for-the-badge
 [commits]: https://github.com/tetele/hvac_group/commits/main
 [hacs]: https://github.com/hacs/integration
-[hacsbadge]: https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge
+[hacsbadge]: https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge
 
 <!-- [discord]: https://discord.gg/Qa5fW2R -->
 <!-- [discord-shield]: https://img.shields.io/discord/330944238910963714.svg?style=for-the-badge -->
