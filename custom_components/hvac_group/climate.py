@@ -28,6 +28,7 @@ from homeassistant.const import (
     PRECISION_TENTHS,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
+    UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers import entity_registry as er
@@ -39,6 +40,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers import start
 from homeassistant.helpers.typing import EventType
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
     CONF_CURRENT_TEMPERATURE_ENTITY_ID,
@@ -71,14 +73,25 @@ async def async_setup_entry(
     unique_id = config_entry.entry_id
 
     sensor_entity_id = config_entry.options.get(CONF_CURRENT_TEMPERATURE_ENTITY_ID)
-    min_temp = config_entry.options.get(CONF_MIN_TEMP, DEFAULT_MIN_TEMP)
-    max_temp = config_entry.options.get(CONF_MAX_TEMP, DEFAULT_MAX_TEMP)
-
-    temperature_unit = hass.config.units.temperature_unit
 
     precision = config_entry.options.get(CONF_PRECISION, PRECISION_TENTHS)
     target_temperature_step = config_entry.options.get(
         CONF_TARGET_TEMP_STEP, PRECISION_HALVES
+    )
+
+    temperature_unit = hass.config.units.temperature_unit
+
+    min_temp = config_entry.options.get(
+        CONF_MIN_TEMP,
+        TemperatureConverter.convert(
+            DEFAULT_MIN_TEMP, UnitOfTemperature.CELSIUS, temperature_unit
+        ),
+    )
+    max_temp = config_entry.options.get(
+        CONF_MAX_TEMP,
+        TemperatureConverter.convert(
+            DEFAULT_MAX_TEMP, UnitOfTemperature.CELSIUS, temperature_unit
+        ),
     )
 
     toggle_coolers = config_entry.options.get(CONF_TOGGLE_COOLERS, False)
@@ -193,8 +206,13 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self._are_heaters_active = False
 
         self._current_temperature: float | None = None
-        self._min_temp = min_temp or DEFAULT_MIN_TEMP
-        self._max_temp = max_temp or DEFAULT_MAX_TEMP
+
+        self._min_temp = min_temp or TemperatureConverter.convert(
+            DEFAULT_MIN_TEMP, UnitOfTemperature.CELSIUS, self.temperature_unit
+        )
+        self._max_temp = max_temp or TemperatureConverter.convert(
+            DEFAULT_MAX_TEMP, UnitOfTemperature.CELSIUS, self.temperature_unit
+        )
         self._target_temp_low = target_temp_low
         self._target_temp_high = target_temp_high
 
@@ -431,13 +449,8 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 )
 
                 if (
-                    state_changes.get("attributes", {ATTR_MIN_TEMP: None}).get(
-                        ATTR_MIN_TEMP
-                    )
-                    is not None
-                    or state_changes.get("attributes", {ATTR_MAX_TEMP: None}).get(
-                        ATTR_MAX_TEMP
-                    )
+                    state_changes.get("attributes", {}).get(ATTR_MIN_TEMP) is not None
+                    or state_changes.get("attributes", {}).get(ATTR_MAX_TEMP)
                     is not None
                 ):
                     self._update_temp_limits(entity_id, new_state, old_state)
