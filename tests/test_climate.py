@@ -167,6 +167,54 @@ async def hvac_group_entry(
     return entry
 
 
+@pytest.mark.asyncio
+async def test_bare_setup(hass: HomeAssistant) -> None:
+    """Test an empty config entry setup."""
+
+    entry = MockConfigEntry(
+        title="HVAC group 1",
+        domain=DOMAIN,
+        options={
+            CONF_PLATFORM: DOMAIN,
+            CONF_NAME: "Test HVAC",
+            CONF_HEATERS: [
+                # DEMO_HEATER_SINGLE_TEMP,
+                # DEMO_HEATER_TEMP_RANGE,
+                # DEMO_COOLER_HEATER,
+            ],
+            CONF_TOGGLE_HEATERS: False,
+            CONF_COOLERS: [
+                # DEMO_COOLER_SINGLE_TEMP,
+                # DEMO_COOLER_TEMP_RANGE,
+                # DEMO_COOLER_HEATER,
+            ],
+            CONF_TOGGLE_COOLERS: False,
+            CONF_CURRENT_TEMPERATURE_ENTITY_ID: DEMO_TEMP_SENSOR,
+        },
+        unique_id="uniq-1",
+    )
+
+    with patch(
+        "custom_components.hvac_group.climate.HvacGroupClimateEntity.async_commit_state_if_running"
+    ) as commit_callback:
+        entry.add_to_hass(hass)
+        # assert not add_callback.called
+
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        await hass.async_start()
+        await hass.async_block_till_done()
+
+        assert commit_callback.called
+
+    entity_registry = er.async_get(hass)
+    entity_id = entity_registry.async_get_entity_id(
+        CLIMATE_DOMAIN, DOMAIN, entry.entry_id
+    )
+
+    assert entity_id == "climate.test_hvac"
+
+
 @pytest.mark.parametrize(("setup_extras", "group_extras"), [({}, {})])
 @pytest.mark.asyncio
 async def test_setup(
@@ -190,7 +238,7 @@ async def test_setup(
     assert float(hvac_group.attributes.get(ATTR_CURRENT_TEMPERATURE)) == 22.5
 
     with patch(
-        "custom_components.hvac_group.climate.HvacGroupActuator._async_call_climate_service"
+        "custom_components.hvac_group.actuator.HvacGroupActuator._async_call_climate_service"
     ) as mock_call_climate_service:
         await hass.services.async_call(
             CLIMATE_DOMAIN,
@@ -333,7 +381,7 @@ async def test_call_forwarding(
     assert hvac_group_entity_id
 
     with patch(
-        "custom_components.hvac_group.climate.HvacGroupActuator._async_call_climate_service"
+        "custom_components.hvac_group.actuator.HvacGroupActuator._async_call_climate_service"
     ) as mock_call_climate_service:
         # command_args is a dict with keys representing actuators or the temp sensor
         service_call_data = {}
@@ -368,5 +416,5 @@ async def test_call_forwarding(
             expected_args: dict[str, Any] = output.get(call.args[0], {})
             assert expected_args.items() <= call.args[2].items(), (
                 f"{call.args[0]} expected a call with {expected_args}, "
-                "actual value was {call.args[2]}"
+                f"actual value was {call.args[2]}"
             )
