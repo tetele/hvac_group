@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Pridať skupinu HVAC",
+        "description": "HVAC Groups vám umožňujú vytvoriť nový termostat, ktorý ovláda ostatné termostaty pomocou jediného rozhrania.",
+        "data": {
+          "name": "Názov",
+          "heaters": "Termostaty vykurovania",
+          "toggle_heaters": "Zapnite alebo vypnite ohrievače v závislosti od teploty okolia",
+          "coolers": "Termostaty chladenia",
+          "toggle_coolers": "Zapnite alebo vypnite chladiče v závislosti od okolitej teploty",
+          "hide_members": "Skryť členov",
+          "temperature_entity_id": "Teplotný senzor"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Upraviť skupinu HVAC",
+        "data": {
+          "heaters": "Termostaty vykurovania",
+          "toggle_heaters": "Zapnite alebo vypnite ohrievače v závislosti od teploty okolia",
+          "coolers": "Termostaty chladenia",
+          "toggle_coolers": "Zapnite alebo vypnite chladiče v závislosti od okolitej teploty",
+          "hide_members": "Skryť členov",
+          "temperature_entity_id": "Teplotný senzor"
+        }
+      }
+    }
+  }
+}
