@@ -25,7 +25,7 @@ from homeassistant.const import (
     ATTR_TEMPERATURE,
     CONF_NAME,
     PRECISION_HALVES,
-    PRECISION_TENTHS,
+    PRECISION_WHOLE,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
     UnitOfTemperature,
@@ -74,12 +74,17 @@ async def async_setup_entry(
 
     sensor_entity_id = config_entry.options.get(CONF_CURRENT_TEMPERATURE_ENTITY_ID)
 
-    precision = config_entry.options.get(CONF_PRECISION, PRECISION_TENTHS)
-    target_temperature_step = config_entry.options.get(
-        CONF_TARGET_TEMP_STEP, PRECISION_HALVES
-    )
-
     temperature_unit = hass.config.units.temperature_unit
+
+    precision = config_entry.options.get(CONF_PRECISION)
+    target_temperature_step = config_entry.options.get(
+        CONF_TARGET_TEMP_STEP,
+        (
+            PRECISION_HALVES
+            if temperature_unit == UnitOfTemperature.CELSIUS
+            else PRECISION_WHOLE
+        ),
+    )
 
     min_temp = config_entry.options.get(
         CONF_MIN_TEMP,
@@ -181,7 +186,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         self._attr_unique_id = unique_id
 
         self._temperature_sensor_entity_id = temperature_sensor_entity_id
-        self._temp_precision = precision or PRECISION_TENTHS
+        self._temp_precision = precision
         self._temp_target_temperature_step = target_temperature_step
         self._attr_temperature_unit = temperature_unit
 
