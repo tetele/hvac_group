@@ -373,6 +373,60 @@ async def test_setup(
                 },
             },
         ),
+        # Test 4 - check setting COOL mode
+        (
+            {DEMO_TEMP_SENSOR: (27, {})},
+            {"options": {CONF_TOGGLE_COOLERS: True, CONF_TOGGLE_HEATERS: True}},
+            {
+                ATTR_TARGET_TEMP_LOW: 21,
+                ATTR_TARGET_TEMP_HIGH: 23,
+                ATTR_HVAC_MODE: HVACMode.COOL,
+            },
+            {
+                DEMO_COOLER_SINGLE_TEMP: {
+                    ATTR_HVAC_MODE: HVACMode.COOL,
+                },
+                DEMO_COOLER_TEMP_RANGE: {
+                    ATTR_HVAC_MODE: HVACMode.COOL,
+                },
+                DEMO_HEATER_SINGLE_TEMP: {
+                    ATTR_HVAC_MODE: HVACMode.OFF,
+                },
+                DEMO_HEATER_TEMP_RANGE: {
+                    ATTR_HVAC_MODE: HVACMode.OFF,
+                },
+                DEMO_COOLER_HEATER: {
+                    ATTR_HVAC_MODE: HVACMode.COOL,
+                },
+            },
+        ),
+        # Test 5 - check setting HEAT mode
+        (
+            {DEMO_TEMP_SENSOR: (20, {})},
+            {"options": {CONF_TOGGLE_COOLERS: True, CONF_TOGGLE_HEATERS: True}},
+            {
+                ATTR_TARGET_TEMP_LOW: 21,
+                ATTR_TARGET_TEMP_HIGH: 23,
+                ATTR_HVAC_MODE: HVACMode.HEAT,
+            },
+            {
+                DEMO_COOLER_SINGLE_TEMP: {
+                    ATTR_HVAC_MODE: HVACMode.OFF,
+                },
+                DEMO_COOLER_TEMP_RANGE: {
+                    ATTR_HVAC_MODE: HVACMode.OFF,
+                },
+                DEMO_HEATER_SINGLE_TEMP: {
+                    ATTR_HVAC_MODE: HVACMode.HEAT,
+                },
+                DEMO_HEATER_TEMP_RANGE: {
+                    ATTR_HVAC_MODE: HVACMode.HEAT,
+                },
+                DEMO_COOLER_HEATER: {
+                    ATTR_HVAC_MODE: HVACMode.HEAT,
+                },
+            },
+        ),
     ],
 )
 @pytest.mark.asyncio

@@ -866,22 +866,14 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
             required_mode in self._attr_hvac_modes
             or HVACMode.HEAT_COOL in self._attr_hvac_modes
         ):
+            self._attr_hvac_modes.append(required_mode)
+            modes_have_changed = True
             if opposite_mode in self._attr_hvac_modes:
-                self._attr_hvac_modes.remove(opposite_mode)
                 self._attr_hvac_modes.append(HVACMode.HEAT_COOL)
-                modes_have_changed = not bool(
-                    self._attr_supported_features
-                    & ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-                )
                 self._attr_supported_features = (
                     ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
                 )
             else:
-                self._attr_hvac_modes.append(required_mode)
-                modes_have_changed = not bool(
-                    self._attr_supported_features
-                    & ClimateEntityFeature.TARGET_TEMPERATURE
-                )
                 self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
 
         if modes_have_changed:
