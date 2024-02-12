@@ -11,8 +11,10 @@ from homeassistant.components.climate import (
     ATTR_MAX_TEMP,
     ATTR_TARGET_TEMP_LOW,
     ATTR_TARGET_TEMP_HIGH,
+    ATTR_TARGET_TEMP_STEP,
     ATTR_TEMPERATURE,
     DOMAIN as CLIMATE_DOMAIN,
+    PRECISION_WHOLE,
     SERVICE_SET_TEMPERATURE,
     ClimateEntityFeature,
     HVACMode,
@@ -25,6 +27,7 @@ from homeassistant.const import (
     CONF_ENTITY_ID,
     CONF_NAME,
     CONF_PLATFORM,
+    UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -171,6 +174,8 @@ async def hvac_group_entry(
 async def test_bare_setup(hass: HomeAssistant) -> None:
     """Test an empty config entry setup."""
 
+    hass.config.units.temperature_unit = UnitOfTemperature.FAHRENHEIT
+
     entry = MockConfigEntry(
         title="HVAC group 1",
         domain=DOMAIN,
@@ -213,6 +218,12 @@ async def test_bare_setup(hass: HomeAssistant) -> None:
     )
 
     assert entity_id == "climate.test_hvac"
+    assert (
+        hass.states.get(entity_id).attributes.get(ATTR_TARGET_TEMP_STEP)
+        == PRECISION_WHOLE
+    )
+
+    hass.config.units.temperature_unit = UnitOfTemperature.CELSIUS
 
 
 @pytest.mark.parametrize(("setup_extras", "group_extras"), [({}, {})])
