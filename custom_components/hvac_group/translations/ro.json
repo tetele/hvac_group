@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Adaugă grup de climatizare (HVAC)",
+        "description": "Grupurile de climatizare (HVAC) îți permit să creezi un termostat nou care controlează alte termostate dintr-o interfață unificată.",
+        "data": {
+          "name": "Nume",
+          "heaters": "Elemente de încălzire",
+          "toggle_heaters": "Pornește sau oprește elementele de încălzire în funcție de temperatura ambientală",
+          "coolers": "Elemente de răcire",
+          "toggle_coolers": "Pornește sau oprește elementele de răcire în funcție de temperatura ambientală",
+          "hide_members": "Ascunde membrii",
+          "temperature_entity_id": "Senzor de temperatură"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Modifică grup de climatizare (HVAC)",
+        "data": {
+          "heaters": "Elemente de încălzire",
+          "toggle_heaters": "Pornește sau oprește elementele de încălzire în funcție de temperatura ambientală",
+          "coolers": "Elemente de răcire",
+          "toggle_coolers": "Pornește sau oprește elementele de răcire în funcție de temperatura ambientală",
+          "hide_members": "Ascunde membrii",
+          "temperature_entity_id": "Senzor de temperatură"
+        }
+      }
+    }
+  }
+}
