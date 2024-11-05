@@ -14,11 +14,15 @@
 
 _Create a custom thermostat to control multiple other climate components. Useful for controlling an AC unit and a heating unit in a single room._
 
+As it is, the integration is way behind the current HA version and is unlikely to work. It is advisable that you don't use it for now.
+
 **This integration will set up the following platforms.**
 
 | Platform  | Description                                                            |
 | --------- | ---------------------------------------------------------------------- |
 | `climate` | The replacement thermostat which can control other nested thermostats. |
+
+The resulting thermostat will control all child members (heaters and coolers), but controlling a child won't propagate the change back to the group. The `hvac_action` of the group is not related directly to the `hvac_action` of the child members.
 
 ## Installation
 
