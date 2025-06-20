@@ -965,12 +965,12 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
                 self._min_temp,
                 self._max_temp,
             )
-            
+
     def _add_heater(self, heater_entity_id: str) -> None:
         """Add a heater actuator referenced by entity_id."""
         if heater_entity_id in self._heaters:
             return
-    
+
         heater = HvacGroupHeater(self.hass, heater_entity_id)
         self._heaters.update({heater_entity_id: heater})
         # Always update HVAC modes, regardless of state
@@ -983,7 +983,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
         """Add a cooler actuator referenced by entity_id."""
         if cooler_entity_id in self._coolers:
             return
-    
+
         cooler = HvacGroupCooler(self.hass, cooler_entity_id)
         self._coolers.update({cooler_entity_id: cooler})
         # Always update HVAC modes, regardless of state
