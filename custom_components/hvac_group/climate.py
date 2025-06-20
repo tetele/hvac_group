@@ -39,7 +39,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers import start
-from homeassistant.helpers.typing import EventType
+from homeassistant.core import Event
 from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
@@ -403,7 +403,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
         @callback
         async def async_actuator_state_changed_listener(
-            event: EventType[EventStateChangedData],
+            event: Event[EventStateChangedData],
         ) -> None:
             """Handle actuator updates, like min/max temp changes."""
 
@@ -482,7 +482,7 @@ class HvacGroupClimateEntity(ClimateEntity, RestoreEntity):
 
         @callback
         async def async_sensor_state_changed_listener(
-            event: EventType[EventStateChangedData],
+            event: Event[EventStateChangedData],
         ) -> None:
             """Handle temperature sensor updates."""
 
